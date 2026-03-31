@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Ingredient, Unit } from '../types';
-import { X, Plus, Archive, Edit2, RotateCcw, Trash2 } from 'lucide-react';
+import { X, Plus, Archive, Edit2, RotateCcw, Trash2, Upload, Search } from 'lucide-react';
 import { formatCurrency } from '../utils';
+import Papa from 'papaparse';
 
 interface Props {
   ingredients: Ingredient[];
@@ -17,6 +18,90 @@ export const IngredientManager: React.FC<Props> = ({ ingredients: initialIngredi
   const [unit, setUnit] = useState<Unit>('kg');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
+  const [searchQuery, setSearchQuery] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const newIngredients: Ingredient[] = [];
+        let errorCount = 0;
+
+        results.data.forEach((row: any) => {
+          try {
+            // CSV 헤더: 출처분류,제품명,규격,총 가격,기준 단위,1단위당 단가(원)
+            const name = row['제품명']?.trim();
+            const boxCostStr = row['총 가격']?.toString().replace(/,/g, '');
+            const boxCost = parseFloat(boxCostStr);
+            const unitStr = row['기준 단위']?.trim().toLowerCase();
+            
+            // 규격에서 숫자만 추출하여 박스당 수량으로 사용 (예: "3kg" -> 3)
+            // 규격 파싱이 어려울 경우 기본값 1 사용
+            let boxQuantity = 1;
+            const specStr = row['규격']?.toString();
+            if (specStr) {
+               const match = specStr.match(/([\d.]+)/);
+               if (match) {
+                 boxQuantity = parseFloat(match[1]);
+               }
+            }
+
+            // 단위 매핑
+            let unit: Unit = 'ea';
+            if (unitStr === 'kg') unit = 'kg';
+            else if (unitStr === 'g') unit = 'g';
+            else if (unitStr === '미') unit = '미';
+
+            if (name && !isNaN(boxCost)) {
+              // 1단위당 단가가 있으면 사용, 없으면 계산
+              let unitCost = 0;
+              const unitCostStr = row['1단위당 단가(원)']?.toString().replace(/,/g, '');
+              if (unitCostStr && !isNaN(parseFloat(unitCostStr))) {
+                unitCost = Math.round(parseFloat(unitCostStr));
+              } else {
+                unitCost = Math.round(boxCost / boxQuantity);
+              }
+
+              newIngredients.push({
+                id: Date.now().toString() + Math.random().toString(36).substring(7),
+                name,
+                boxCost,
+                boxQuantity,
+                unitCost,
+                unit,
+                isArchived: false,
+                createdAt: new Date().toISOString()
+              });
+            } else {
+              errorCount++;
+            }
+          } catch (e) {
+            errorCount++;
+          }
+        });
+
+        if (newIngredients.length > 0) {
+          setIngredients(prev => [...prev, ...newIngredients]);
+          alert(`성공적으로 ${newIngredients.length}개의 식자재를 불러왔습니다.${errorCount > 0 ? `\n(${errorCount}개의 행은 형식이 맞지 않아 제외되었습니다.)` : ''}`);
+        } else {
+          alert('불러올 수 있는 유효한 데이터가 없습니다. CSV 파일 형식을 확인해주세요.');
+        }
+        
+        // 파일 입력 초기화
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      },
+      error: (error) => {
+        alert(`CSV 파일 읽기 오류: ${error.message}`);
+      }
+    });
+  };
 
   const handleAddOrUpdate = () => {
     if (!name || boxCost < 0 || boxQuantity <= 0) return;
@@ -71,17 +156,37 @@ export const IngredientManager: React.FC<Props> = ({ ingredients: initialIngredi
   const activeIngredients = ingredients.filter(ing => !ing.isArchived);
   const archivedIngredients = ingredients.filter(ing => ing.isArchived);
 
+  const displayedIngredients = (activeTab === 'active' ? activeIngredients : archivedIngredients)
+    .filter(ing => ing.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl flex flex-col max-h-[90vh]">
         <div className="flex justify-between items-center p-4 border-b shrink-0">
           <h2 className="text-lg font-semibold">식자재 관리</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-4">
+            <input
+              type="file"
+              accept=".csv"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-50 text-green-700 hover:bg-green-100 rounded-md transition-colors font-medium border border-green-200"
+              title="CSV 파일 업로드 (형식: 출처분류,제품명,규격,총 가격,기준 단위,1단위당 단가(원))"
+            >
+              <Upload size={16} />
+              CSV 불러오기
+            </button>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
-        <div className="flex border-b bg-gray-50 px-4 pt-2 shrink-0">
+        <div className="flex border-b bg-gray-50 px-4 pt-2 shrink-0 items-center">
           <button 
             onClick={() => setActiveTab('active')}
             className={`px-4 py-2 text-sm font-medium border-b-2 ${activeTab === 'active' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
@@ -94,6 +199,16 @@ export const IngredientManager: React.FC<Props> = ({ ingredients: initialIngredi
           >
             보관함
           </button>
+          <div className="ml-auto pb-2 relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+            <input
+              type="text"
+              placeholder="식자재 검색..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
+            />
+          </div>
         </div>
 
         {activeTab === 'active' && (
@@ -201,7 +316,7 @@ export const IngredientManager: React.FC<Props> = ({ ingredients: initialIngredi
               </tr>
             </thead>
             <tbody className="divide-y">
-              {(activeTab === 'active' ? activeIngredients : archivedIngredients).map(ing => (
+              {displayedIngredients.map(ing => (
                 <tr key={ing.id} className={editingId === ing.id ? 'bg-blue-50' : ''}>
                   <td className="py-2">{ing.name}</td>
                   <td className="py-2 text-right text-gray-500">{formatCurrency(ing.boxCost)}</td>
@@ -228,10 +343,12 @@ export const IngredientManager: React.FC<Props> = ({ ingredients: initialIngredi
                   </td>
                 </tr>
               ))}
-              {(activeTab === 'active' ? activeIngredients : archivedIngredients).length === 0 && (
+              {displayedIngredients.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-gray-500">
-                    {activeTab === 'active' ? '등록된 식자재가 없습니다.' : '보관된 식자재가 없습니다.'}
+                    {searchQuery 
+                      ? '검색 결과가 없습니다.' 
+                      : (activeTab === 'active' ? '등록된 식자재가 없습니다.' : '보관된 식자재가 없습니다.')}
                   </td>
                 </tr>
               )}
