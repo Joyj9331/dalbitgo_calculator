@@ -163,9 +163,9 @@ export default function App() {
     }
   };
 
-  const handleSaveRecipe = async (menuId: string, recipe: RecipeItem[]) => {
+  const handleSaveRecipe = async (menuId: string, recipe: RecipeItem[], notes: string) => {
     try {
-      await updateDoc(doc(db, 'menus', menuId), { recipe });
+      await updateDoc(doc(db, 'menus', menuId), { recipe, notes });
       setIsRecipeModalOpen(false);
       setRecipeMenu(null);
     } catch (error) {

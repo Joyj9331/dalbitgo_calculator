@@ -32,6 +32,7 @@ export interface Menu {
   name: string;
   prices: Record<Region, number>;
   recipe: RecipeItem[];
+  notes?: string;
   isArchived?: boolean;
   createdAt?: string;
 }
