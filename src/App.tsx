@@ -18,7 +18,7 @@ import Papa from 'papaparse';
 import { calculateTotalCost, formatPercent } from './utils';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, collection, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 
 type TabType = Region | '전체보기' | '보관함';
 
@@ -152,6 +152,17 @@ export default function App() {
     }
   };
 
+  const handleDeleteMenu = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'menus', id));
+      setIsMenuModalOpen(false);
+      setEditingMenu(undefined);
+    } catch (error) {
+      console.error('Error deleting menu:', error);
+      alert('메뉴 영구 삭제 실패');
+    }
+  };
+
   const handleSaveRecipe = async (menuId: string, recipe: RecipeItem[]) => {
     try {
       await updateDoc(doc(db, 'menus', menuId), { recipe });
@@ -165,11 +176,23 @@ export default function App() {
 
   const handleSaveIngredients = async (newIngredients: Ingredient[]) => {
     try {
-      // For simplicity, we just update all changed ingredients. 
-      // In a real app, we'd track changes, but here we can just set them.
-      for (const ing of newIngredients) {
-        await setDoc(doc(db, 'ingredients', ing.id), ing);
-      }
+      const batch = writeBatch(db);
+      
+      // Find deleted ingredients
+      const deletedIds = ingredients
+        .filter(ing => !newIngredients.find(u => u.id === ing.id))
+        .map(ing => ing.id);
+        
+      deletedIds.forEach(id => {
+        batch.delete(doc(db, 'ingredients', id));
+      });
+
+      newIngredients.forEach(ing => {
+        const ingRef = doc(db, 'ingredients', ing.id);
+        batch.set(ingRef, ing);
+      });
+      
+      await batch.commit();
       setIsIngredientModalOpen(false);
     } catch (error) {
       console.error('Error saving ingredients:', error);
@@ -356,7 +379,7 @@ export default function App() {
           {activeTab === '전체보기' ? (
             <OverviewTable menus={activeMenus} ingredients={ingredients} />
           ) : activeTab === '보관함' ? (
-            <ArchiveView menus={archivedMenus} ingredients={ingredients} onRestoreMenu={handleRestoreMenu} />
+            <ArchiveView menus={archivedMenus} ingredients={ingredients} onRestoreMenu={handleRestoreMenu} onDeleteMenu={handleDeleteMenu} />
           ) : (
             <MenuTable 
               menus={activeMenus} 
@@ -377,6 +400,7 @@ export default function App() {
           onSave={handleSaveMenu} 
           onClose={() => { setIsMenuModalOpen(false); setEditingMenu(undefined); }} 
           onArchive={handleArchiveMenu}
+          onDelete={handleDeleteMenu}
         />
       )}
       

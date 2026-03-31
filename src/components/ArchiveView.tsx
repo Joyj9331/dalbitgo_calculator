@@ -1,15 +1,16 @@
 import React from 'react';
 import { Menu, Ingredient } from '../types';
 import { calculateTotalCost, formatCurrency } from '../utils';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Trash2 } from 'lucide-react';
 
 interface Props {
   menus: Menu[];
   ingredients: Ingredient[];
   onRestoreMenu: (id: string) => void;
+  onDeleteMenu: (id: string) => void;
 }
 
-export const ArchiveView: React.FC<Props> = ({ menus, ingredients, onRestoreMenu }) => {
+export const ArchiveView: React.FC<Props> = ({ menus, ingredients, onRestoreMenu, onDeleteMenu }) => {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm text-left text-gray-500">
@@ -28,9 +29,16 @@ export const ArchiveView: React.FC<Props> = ({ menus, ingredients, onRestoreMenu
               <tr key={menu.id} className="bg-white border-b hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900">{menu.name}</td>
                 <td className="px-4 py-3 text-right">{formatCurrency(cost)}</td>
-                <td className="px-4 py-3 text-center">
+                <td className="px-4 py-3 text-center space-x-2">
                   <button onClick={() => onRestoreMenu(menu.id)} className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors" title="복구">
                     <RotateCcw size={16} />
+                  </button>
+                  <button onClick={() => {
+                    if (window.confirm('정말로 이 메뉴를 영구 삭제하시겠습니까?')) {
+                      onDeleteMenu(menu.id);
+                    }
+                  }} className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="영구 삭제">
+                    <Trash2 size={16} />
                   </button>
                 </td>
               </tr>

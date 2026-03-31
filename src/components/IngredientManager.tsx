@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Ingredient, Unit } from '../types';
-import { X, Plus, Archive, Edit2, RotateCcw } from 'lucide-react';
+import { X, Plus, Archive, Edit2, RotateCcw, Trash2 } from 'lucide-react';
 import { formatCurrency } from '../utils';
 
 interface Props {
@@ -60,6 +60,12 @@ export const IngredientManager: React.FC<Props> = ({ ingredients: initialIngredi
 
   const handleRestore = (id: string) => {
     setIngredients(ingredients.map(ing => ing.id === id ? { ...ing, isArchived: false } : ing));
+  };
+
+  const handlePermanentDelete = (id: string) => {
+    if (window.confirm('정말로 이 식자재를 영구 삭제하시겠습니까?')) {
+      setIngredients(ingredients.filter(ing => ing.id !== id));
+    }
   };
 
   const activeIngredients = ingredients.filter(ing => !ing.isArchived);
@@ -210,9 +216,14 @@ export const IngredientManager: React.FC<Props> = ({ ingredients: initialIngredi
                         </button>
                       </>
                     ) : (
-                      <button onClick={() => handleRestore(ing.id)} className="p-1 text-gray-400 hover:text-green-600 rounded" title="복구">
-                        <RotateCcw size={16} />
-                      </button>
+                      <>
+                        <button onClick={() => handleRestore(ing.id)} className="p-1 text-gray-400 hover:text-green-600 rounded" title="복구">
+                          <RotateCcw size={16} />
+                        </button>
+                        <button onClick={() => handlePermanentDelete(ing.id)} className="p-1 text-gray-400 hover:text-red-600 rounded" title="영구 삭제">
+                          <Trash2 size={16} />
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>

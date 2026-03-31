@@ -7,9 +7,10 @@ interface Props {
   onSave: (menu: Menu) => void;
   onClose: () => void;
   onArchive?: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
-export const MenuModal: React.FC<Props> = ({ menu, onSave, onClose, onArchive }) => {
+export const MenuModal: React.FC<Props> = ({ menu, onSave, onClose, onArchive, onDelete }) => {
   const isEdit = !!menu;
   const [name, setName] = useState(menu?.name || '');
   const [prices, setPrices] = useState<Record<Region, number>>(
@@ -74,10 +75,19 @@ export const MenuModal: React.FC<Props> = ({ menu, onSave, onClose, onArchive })
           </div>
 
           <div className="flex justify-between items-center pt-4">
-            <div>
+            <div className="flex gap-2">
               {isEdit && onArchive && (
                 <button type="button" onClick={() => { onArchive(menu.id); onClose(); }} className="px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 rounded-md transition-colors">
                   보관함으로 이동
+                </button>
+              )}
+              {isEdit && onDelete && (
+                <button type="button" onClick={() => { 
+                  if (window.confirm('정말로 이 메뉴를 영구 삭제하시겠습니까?')) {
+                    onDelete(menu.id); 
+                  }
+                }} className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-md transition-colors">
+                  영구 삭제
                 </button>
               )}
             </div>
