@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile containing role and approval status",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "isApproved": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "name", "role", "isApproved", "isActive", "createdAt"]
+    },
+    "Menu": {
+      "title": "Menu",
+      "description": "Menu item with regional prices and recipe",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "prices": {
+          "type": "object",
+          "properties": {
+            "지방권": { "type": "number" },
+            "광역권": { "type": "number" },
+            "수도권": { "type": "number" }
+          }
+        },
+        "recipe": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ingredientId": { "type": "string" },
+              "quantity": { "type": "number" }
+            }
+          }
+        },
+        "isArchived": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "prices", "recipe", "isArchived", "createdAt"]
+    },
+    "Ingredient": {
+      "title": "Ingredient",
+      "description": "Ingredient with cost and unit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "boxCost": { "type": "number" },
+        "boxQuantity": { "type": "number" },
+        "unitCost": { "type": "number" },
+        "unit": { "type": "string", "enum": ["kg", "g", "ea", "미"] },
+        "isArchived": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "boxCost", "boxQuantity", "unitCost", "unit", "isArchived", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/menus/{menuId}": {
+      "schema": { "$ref": "#/entities/Menu" },
+      "description": "Menu items"
+    },
+    "/ingredients/{ingredientId}": {
+      "schema": { "$ref": "#/entities/Ingredient" },
+      "description": "Ingredients"
+    }
+  }
+}
