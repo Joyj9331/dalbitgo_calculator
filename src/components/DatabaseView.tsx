@@ -310,7 +310,7 @@ export const DatabaseView: React.FC<Props> = ({
         </div>
       </div>
 
-      {activeTab === 'active' && (
+      {(activeTab === 'active' || activeTab === 'all') && (
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-slate-50 dark:bg-slate-800/30 flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[150px]">
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">재료명</label>
@@ -423,8 +423,9 @@ export const DatabaseView: React.FC<Props> = ({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4">
-        <table className="w-full text-sm text-left">
+      <div className="flex-1 overflow-auto p-4">
+        <div className="min-w-[800px]">
+          <table className="w-full text-sm text-left">
           <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase border-b border-slate-200 dark:border-slate-800">
             <tr>
               <th className="pb-2 w-10 text-center">선택</th>
@@ -495,7 +496,8 @@ export const DatabaseView: React.FC<Props> = ({
               </tr>
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
 
       {hoveredId && (

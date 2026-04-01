@@ -16,9 +16,11 @@ export const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(localStorage.getItem('rememberedEmail') || '');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [rememberMe, setRememberMe] = useState(!!localStorage.getItem('rememberedEmail'));
+  const [autoLogin, setAutoLogin] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -70,6 +72,11 @@ export const Auth: React.FC = () => {
         setMessage('비밀번호 재설정 이메일이 발송되었습니다.');
         setIsForgotPassword(false);
       } else if (isLogin) {
+        if (rememberMe) {
+          localStorage.setItem('rememberedEmail', email);
+        } else {
+          localStorage.removeItem('rememberedEmail');
+        }
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         if (!userCredential.user.emailVerified) {
           setError('이메일 인증이 필요합니다. 메일함을 확인해주세요.');
@@ -97,23 +104,26 @@ export const Auth: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
-      <div className="bg-white p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 w-full max-w-sm">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 font-sans transition-colors">
+      <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 dark:border-slate-800 w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">F&B Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-2">
+          <div className="w-16 h-16 bg-slate-900 dark:bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <span className="text-white font-bold text-xl">S</span>
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">SAEMOYANG F&B</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
             {isForgotPassword ? '비밀번호 찾기' : isLogin ? '로그인' : '회원가입'}
           </p>
         </div>
         
-        {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg">{error}</div>}
-        {message && <div className="mb-4 p-3 bg-green-50 text-green-600 text-sm rounded-lg">{message}</div>}
+        {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded-lg border border-red-100 dark:border-red-800">{error}</div>}
+        {message && <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 text-sm rounded-lg border border-green-100 dark:border-green-800">{message}</div>}
 
         <div className="space-y-4">
           <button 
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 text-slate-700 py-2.5 rounded-lg hover:bg-slate-50 font-medium transition-colors text-sm disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 py-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 font-medium transition-colors text-sm disabled:opacity-50 shadow-sm"
           >
             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
             Google로 계속하기
@@ -121,37 +131,62 @@ export const Auth: React.FC = () => {
 
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-100"></div>
+              <div className="w-full border-t border-slate-100 dark:border-slate-800"></div>
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-slate-400">또는</span>
+              <span className="bg-white dark:bg-slate-900 px-2 text-slate-400 dark:text-slate-500">또는</span>
             </div>
           </div>
 
           <form onSubmit={handleAuth} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">이메일</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">이메일</label>
               <input 
                 type="email" 
                 required
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="w-full border border-slate-200 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all text-sm"
+                className="w-full border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 dark:focus:ring-blue-500 focus:border-transparent transition-all text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                 placeholder="이메일을 입력하세요"
               />
             </div>
             
             {!isForgotPassword && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">비밀번호</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">비밀번호</label>
                 <input 
                   type="password" 
                   required
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full border border-slate-200 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all text-sm"
+                  className="w-full border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 dark:focus:ring-blue-500 focus:border-transparent transition-all text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                   placeholder="비밀번호를 입력하세요"
                 />
+              </div>
+            )}
+
+            {isLogin && !isForgotPassword && (
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      checked={rememberMe}
+                      onChange={e => setRememberMe(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                    />
+                    <span className="text-xs text-slate-500 group-hover:text-slate-700 transition-colors">아이디 저장</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      checked={autoLogin}
+                      onChange={e => setAutoLogin(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                    />
+                    <span className="text-xs text-slate-500 group-hover:text-slate-700 transition-colors">자동 로그인</span>
+                  </label>
+                </div>
               </div>
             )}
 
@@ -172,28 +207,28 @@ export const Auth: React.FC = () => {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-slate-900 text-white py-2.5 rounded-lg hover:bg-slate-800 font-medium transition-colors mt-4 disabled:opacity-50"
+              className="w-full bg-slate-900 dark:bg-blue-600 text-white py-2.5 rounded-lg hover:bg-slate-800 dark:hover:bg-blue-700 font-medium transition-colors mt-4 disabled:opacity-50 shadow-md"
             >
               {loading ? '처리 중...' : isForgotPassword ? '비밀번호 재설정 메일 보내기' : isLogin ? '로그인' : '가입하기'}
             </button>
           </form>
         </div>
 
-        <div className="mt-6 text-center text-sm text-slate-500 space-y-2">
+        <div className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400 space-y-2">
           {isForgotPassword ? (
-            <button onClick={() => setIsForgotPassword(false)} className="text-slate-900 font-medium hover:underline">
+            <button onClick={() => setIsForgotPassword(false)} className="text-slate-900 dark:text-blue-400 font-medium hover:underline">
               로그인으로 돌아가기
             </button>
           ) : (
             <>
               <div>
-                <button onClick={() => setIsForgotPassword(true)} className="text-slate-900 hover:underline">
+                <button onClick={() => setIsForgotPassword(true)} className="text-slate-900 dark:text-blue-400 hover:underline">
                   비밀번호를 잊으셨나요?
                 </button>
               </div>
               <div>
                 {isLogin ? '계정이 없으신가요? ' : '이미 계정이 있으신가요? '}
-                <button onClick={() => setIsLogin(!isLogin)} className="text-slate-900 font-medium hover:underline">
+                <button onClick={() => setIsLogin(!isLogin)} className="text-slate-900 dark:text-blue-400 font-medium hover:underline">
                   {isLogin ? '회원가입' : '로그인'}
                 </button>
               </div>

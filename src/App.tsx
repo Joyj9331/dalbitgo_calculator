@@ -659,59 +659,63 @@ export default function App() {
       <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
         
         {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">메뉴 원가/마진 대시보드</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">권역별 메뉴 가격 및 레시피 원가 관리</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">메뉴 원가/마진 대시보드</h1>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">권역별 메뉴 가격 및 레시피 원가 관리</p>
           </div>
           
-          <div className="flex flex-wrap items-center gap-2">
-            <button 
-              onClick={toggleTheme}
-              className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors mr-2"
-              title={theme === 'light' ? '다크 모드로 전환' : '라이트 모드로 전환'}
-            >
-              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-            </button>
+          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-between lg:justify-end">
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={toggleTheme}
+                className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm transition-colors"
+                title={theme === 'light' ? '다크 모드로 전환' : '라이트 모드로 전환'}
+              >
+                {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+              </button>
 
-            <button 
-              onClick={handleExportCsv}
-              className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-1.5 text-sm shadow-sm transition-colors"
-            >
-              <Download size={16} /> 내보내기
-            </button>
+              <button 
+                onClick={handleExportCsv}
+                className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-1.5 text-sm shadow-sm transition-colors"
+              >
+                <Download size={16} /> <span className="hidden sm:inline">내보내기</span>
+              </button>
+            </div>
             
-            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2 hidden sm:block"></div>
+            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block"></div>
             
-            <div className="flex items-center gap-3 ml-2">
+            <div className="flex items-center gap-2 sm:gap-3">
               <div className="flex flex-col items-end">
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{currentUser.name}님</span>
-                <span className="text-xs text-slate-500 dark:text-slate-400">{currentUser.role === 'admin' ? '관리자' : '사용자'}</span>
+                <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200">{currentUser.name}님</span>
+                <span className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">{currentUser.role === 'admin' ? '관리자' : '사용자'}</span>
               </div>
               
-              {currentUser.role === 'admin' && (
+              <div className="flex items-center gap-1">
+                {currentUser.role === 'admin' && (
+                  <button 
+                    onClick={() => setShowAdminPanel(!showAdminPanel)} 
+                    className={`p-1.5 rounded-md transition-colors ${showAdminPanel ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                    title="관리자 패널"
+                  >
+                    <Users size={18} />
+                  </button>
+                )}
                 <button 
-                  onClick={() => setShowAdminPanel(!showAdminPanel)} 
-                  className={`p-1.5 rounded-md transition-colors ${showAdminPanel ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                  title="관리자 패널"
+                  onClick={() => setIsChangePasswordOpen(true)} 
+                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
+                  title="비밀번호 변경"
                 >
-                  <Users size={18} />
+                  <KeyRound size={18} />
                 </button>
-              )}
-              <button 
-                onClick={() => setIsChangePasswordOpen(true)} 
-                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
-                title="비밀번호 변경"
-              >
-                <KeyRound size={18} />
-              </button>
-              <button 
-                onClick={handleLogout} 
-                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
-                title="로그아웃"
-              >
-                <LogOut size={18} />
-              </button>
+                <button 
+                  onClick={handleLogout} 
+                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
+                  title="로그아웃"
+                >
+                  <LogOut size={18} />
+                </button>
+              </div>
             </div>
           </div>
         </div>

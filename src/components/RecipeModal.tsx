@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Menu, Ingredient, RecipeItem } from '../types';
-import { X, Plus, Trash2, Search, ChevronDown } from 'lucide-react';
+import { X, Plus, Trash2, Search, ChevronDown, Check } from 'lucide-react';
 import { calculateTotalCost, formatCurrency } from '../utils';
 
 interface Props {
@@ -17,7 +17,9 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [notes, setNotes] = useState<string>(menu.notes || '');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const selectedIng = ingredients.find(ing => ing.id === selectedIngredient);
 
@@ -30,6 +32,15 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Reset focused index when search query changes or dropdown opens
+  useEffect(() => {
+    if (isDropdownOpen) {
+      setFocusedIndex(0);
+    } else {
+      setFocusedIndex(-1);
+    }
+  }, [isDropdownOpen, searchQuery]);
 
   const handleAdd = () => {
     if (!selectedIngredient || quantity <= 0) return;
@@ -63,17 +74,44 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
     .filter(ing => ing.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (!isDropdownOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+        setIsDropdownOpen(true);
+      }
+      return;
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (filteredIngredients.length > 0) {
+      if (focusedIndex >= 0 && focusedIndex < filteredIngredients.length) {
+        setSelectedIngredient(filteredIngredients[focusedIndex].id);
+        setIsDropdownOpen(false);
+        setSearchQuery('');
+      } else if (filteredIngredients.length > 0) {
         setSelectedIngredient(filteredIngredients[0].id);
         setIsDropdownOpen(false);
         setSearchQuery('');
       }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setFocusedIndex(prev => (prev < filteredIngredients.length - 1 ? prev + 1 : prev));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setFocusedIndex(prev => (prev > 0 ? prev - 1 : prev));
     } else if (e.key === 'Escape') {
       setIsDropdownOpen(false);
     }
   };
+
+  // Scroll focused item into view
+  useEffect(() => {
+    if (focusedIndex >= 0 && listRef.current) {
+      const focusedElement = listRef.current.children[focusedIndex] as HTMLElement;
+      if (focusedElement) {
+        focusedElement.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [focusedIndex]);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -124,7 +162,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
 
                 {isDropdownOpen && (
                   <div className="absolute z-[60] left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md shadow-xl max-h-64 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="py-1">
+                    <div className="py-1" ref={listRef}>
                       {filteredIngredients.length === 0 ? (
                         <div className="px-4 py-6 text-sm text-slate-500 dark:text-slate-400 text-center flex flex-col items-center gap-2">
                           <Search size={24} className="text-slate-300 dark:text-slate-600" />
@@ -140,13 +178,22 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
                               setIsDropdownOpen(false);
                               setSearchQuery('');
                             }}
-                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors flex justify-between items-center group ${selectedIngredient === ing.id ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 font-medium' : 'text-slate-700 dark:text-slate-300'}`}
+                            onMouseEnter={() => setFocusedIndex(index)}
+                            className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex justify-between items-center group
+                              ${focusedIndex === index ? 'bg-blue-50 dark:bg-blue-900/30' : ''}
+                              ${selectedIngredient === ing.id ? 'text-blue-700 dark:text-blue-400 font-medium' : 'text-slate-700 dark:text-slate-300'}
+                            `}
                           >
                             <div className="flex flex-col">
                               <div className="flex items-center gap-2">
-                                <span className="group-hover:text-blue-700 dark:group-hover:text-blue-400">{ing.name}</span>
+                                <span className={`transition-colors ${focusedIndex === index || selectedIngredient === ing.id ? 'text-blue-700 dark:text-blue-400' : ''}`}>
+                                  {ing.name}
+                                </span>
                                 {ing.isSelectedForMenu && (
                                   <span className="text-[8px] bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 px-1 rounded border border-blue-200 dark:border-blue-800">메뉴용</span>
+                                )}
+                                {selectedIngredient === ing.id && (
+                                  <Check size={14} className="text-blue-600 dark:text-blue-400" />
                                 )}
                               </div>
                               <span className="text-[10px] text-slate-400 uppercase tracking-wider">단위: {ing.unit}</span>
