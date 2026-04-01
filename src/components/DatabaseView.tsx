@@ -85,24 +85,59 @@ export const DatabaseView: React.FC<Props> = ({
 
         results.data.forEach((row: any) => {
           try {
-            const name = (row['상품명'] || row['Name'] || row['item'])?.trim();
-            const spec = (row['규격'] || row['Spec'] || row['size'])?.toString() || '';
+            const name = (row['상품명'] || row['Name'] || row['item'])?.trim() || '';
+            const spec = (row['규격'] || row['Spec'] || row['size'])?.toString().trim() || '';
             const boxCostStr = (row['매입가'] || row['Cost'] || row['price'])?.toString().replace(/,/g, '');
             const boxCost = parseFloat(boxCostStr);
             const salesPriceStr = (row['매출가'] || row['Sales'] || row['sell'])?.toString().replace(/,/g, '');
             const salesPrice = parseFloat(salesPriceStr) || 0;
-            const unitStr = (row['단위'] || row['Unit'] || row['unit'])?.trim().toLowerCase();
-            const boxQuantity = Math.max(0.001, parseFloat(row['내품수량'] || row['Quantity'] || row['qty'] || row['count']) || 1);
+
+            const nameText = name.toLowerCase().replace(/\s/g, '');
+            const specText = spec.toLowerCase().replace(/\s/g, '');
+            const searchText = nameText + specText;
 
             let unit: Unit = 'ea';
-            if (unitStr === 'kg') unit = 'kg';
-            else if (unitStr === 'g') unit = 'g';
-            else if (unitStr === '미') unit = '미';
-            
-            // Auto-detect '미' unit from name or spec (e.g., "20미", "10미")
-            const miPattern = /\d+미/;
-            if (miPattern.test(name) || miPattern.test(spec)) {
+            let boxQuantity = 1;
+
+            // 💡 [프랜차이즈 전용 특수 규칙]
+            if (nameText.includes('백미새우')) {
               unit = '미';
+              boxQuantity = 20;
+            } else if (nameText.includes('국내산고등어') && nameText.includes('원물')) {
+              unit = '미';
+              boxQuantity = 28;
+            } else if (searchText.includes('미')) {
+              const match = searchText.match(/(\d+)미/);
+              if (match) {
+                boxQuantity = parseInt(match[1]);
+                unit = '미';
+              }
+            } else if (searchText.includes('kg')) {
+              const match = searchText.match(/([\d\.]+)kg/);
+              if (match) {
+                const weightKg = parseFloat(match[1]);
+                boxQuantity = weightKg * 1000;
+                unit = 'g';
+              }
+            } else if (searchText.includes('g')) {
+              const match = searchText.match(/([\d\.]+)g/);
+              if (match) {
+                boxQuantity = parseFloat(match[1]);
+                unit = 'g';
+              }
+            } else if (searchText.includes('개') || searchText.includes('팩')) {
+              const match = searchText.match(/(\d+)(개|팩)/);
+              if (match) {
+                boxQuantity = parseInt(match[1]);
+                unit = 'ea';
+              }
+            } else {
+              // Fallback to existing columns if parsing fails
+              const unitStr = (row['단위'] || row['Unit'] || row['unit'])?.trim().toLowerCase();
+              boxQuantity = Math.max(0.001, parseFloat(row['내품수량'] || row['Quantity'] || row['qty'] || row['count']) || 1);
+              if (unitStr === 'kg') unit = 'kg';
+              else if (unitStr === 'g') unit = 'g';
+              else if (unitStr === '미') unit = '미';
             }
 
             if (name && !isNaN(boxCost)) {
