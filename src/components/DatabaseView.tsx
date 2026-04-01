@@ -88,9 +88,16 @@ export const DatabaseView: React.FC<Props> = ({
             if (unitStr === 'kg') unit = 'kg';
             else if (unitStr === 'g') unit = 'g';
             else if (unitStr === '미') unit = '미';
+            
+            // Auto-detect '미' unit from name or spec (e.g., "20미", "10미")
+            const miPattern = /\d+미/;
+            if (miPattern.test(name) || miPattern.test(spec)) {
+              unit = '미';
+            }
 
             if (name && !isNaN(boxCost)) {
               const unitCost = Math.round(boxCost / boxQuantity);
+              const unitSalesPrice = Math.round(salesPrice / boxQuantity);
               const existingIndex = currentIngredients.findIndex(ing => ing.name === name);
 
               if (existingIndex !== -1) {
@@ -102,6 +109,7 @@ export const DatabaseView: React.FC<Props> = ({
                   salesPrice,
                   boxQuantity,
                   unitCost,
+                  unitSalesPrice,
                   unit,
                   isArchived: false
                 };
@@ -116,6 +124,7 @@ export const DatabaseView: React.FC<Props> = ({
                   salesPrice,
                   boxQuantity,
                   unitCost,
+                  unitSalesPrice,
                   unit,
                   isArchived: false,
                   createdAt: new Date().toISOString()
@@ -162,11 +171,12 @@ export const DatabaseView: React.FC<Props> = ({
     if (!name || boxCost < 0 || boxQuantity <= 0) return;
 
     const unitCost = Math.round(boxCost / boxQuantity);
+    const unitSalesPrice = Math.round(salesPrice / boxQuantity);
     let updated: Ingredient[];
 
     if (editingId) {
       updated = ingredients.map(ing => 
-        ing.id === editingId ? { ...ing, name, spec, boxCost, salesPrice, boxQuantity, unitCost, unit } : ing
+        ing.id === editingId ? { ...ing, name, spec, boxCost, salesPrice, boxQuantity, unitCost, unitSalesPrice, unit } : ing
       );
       setEditingId(null);
     } else {
@@ -178,6 +188,7 @@ export const DatabaseView: React.FC<Props> = ({
         salesPrice,
         boxQuantity, 
         unitCost, 
+        unitSalesPrice,
         unit, 
         isArchived: false,
         createdAt: new Date().toISOString()
@@ -195,6 +206,16 @@ export const DatabaseView: React.FC<Props> = ({
     setUnit('kg');
   };
 
+  const resetForm = () => {
+    setEditingId(null);
+    setName('');
+    setSpec('');
+    setBoxCost(0);
+    setSalesPrice(0);
+    setBoxQuantity(1);
+    setUnit('kg');
+  };
+
   const handleEdit = (ing: Ingredient) => {
     setEditingId(ing.id);
     setName(ing.name);
@@ -203,6 +224,14 @@ export const DatabaseView: React.FC<Props> = ({
     setSalesPrice(ing.salesPrice || 0);
     setBoxQuantity(ing.boxQuantity);
     setUnit(ing.unit);
+    
+    // Scroll to form
+    const formElement = document.getElementById('ingredient-form');
+    if (formElement) {
+      formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleArchive = (id: string) => {
@@ -311,66 +340,103 @@ export const DatabaseView: React.FC<Props> = ({
       </div>
 
       {(activeTab === 'active' || activeTab === 'all') && (
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-slate-50 dark:bg-slate-800/30 flex flex-wrap gap-2 items-end">
-          <div className="flex-1 min-w-[150px]">
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">재료명</label>
+        <div 
+          id="ingredient-form"
+          className={`p-4 border-b shrink-0 transition-all duration-300 ${
+            editingId 
+              ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 shadow-inner' 
+              : 'bg-slate-50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              {editingId ? (
+                <>
+                  <Edit2 size={16} className="text-blue-600" />
+                  <span className="text-blue-600">식자재 수정 중</span>
+                </>
+              ) : (
+                <>
+                  <Plus size={16} className="text-slate-600" />
+                  <span>새 식자재 추가</span>
+                </>
+              )}
+            </h3>
+            {editingId && (
+              <button 
+              onClick={resetForm}
+              className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline"
+            >
+              수정 취소
+            </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-3 items-end">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 uppercase tracking-wider">
+              {editingId ? '수정 중인 재료명' : '재료명'}
+            </label>
             <input 
               type="text" 
               value={name} 
               onChange={e => setName(e.target.value)}
-              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              className={`w-full border rounded-md px-3 py-2 text-sm transition-all ${
+                editingId 
+                  ? 'border-blue-400 focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900' 
+                  : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800'
+              } text-slate-900 dark:text-white`}
               placeholder="예: 고등어"
             />
           </div>
-          <div className="w-24">
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">규격</label>
+          <div className="w-full sm:w-24">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 uppercase tracking-wider">규격</label>
             <input 
               type="text" 
               value={spec} 
               onChange={e => setSpec(e.target.value)}
-              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-2 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
               placeholder="3kg"
             />
           </div>
-          <div className="w-28">
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">매입가(박스)</label>
+          <div className="w-[calc(50%-6px)] sm:w-28">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 uppercase tracking-wider">매입가(박스)</label>
             <input 
               type="number" 
               min="0" 
               step="100"
               value={boxCost} 
               onChange={e => setBoxCost(parseInt(e.target.value) || 0)}
-              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-2 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             />
           </div>
-          <div className="w-28">
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">매출가</label>
+          <div className="w-[calc(50%-6px)] sm:w-28">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 uppercase tracking-wider">매출가</label>
             <input 
               type="number" 
               min="0" 
               step="100"
               value={salesPrice} 
               onChange={e => setSalesPrice(parseInt(e.target.value) || 0)}
-              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-2 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             />
           </div>
-          <div className="w-24">
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">박스당 수량</label>
+          <div className="w-[calc(50%-6px)] sm:w-24">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 uppercase tracking-wider">박스당 수량</label>
             <input 
               type="number" 
               min="0.1" 
               step="0.1"
               value={boxQuantity} 
               onChange={e => setBoxQuantity(parseFloat(e.target.value) || 0)}
-              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-2 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             />
           </div>
-          <div className="w-20">
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">단위</label>
+          <div className="w-[calc(50%-6px)] sm:w-20">
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 uppercase tracking-wider">단위</label>
             <select 
               value={unit} 
               onChange={e => setUnit(e.target.value as Unit)}
-              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-2 py-1.5 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+              className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-2 py-2 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
             >
               <option value="kg">kg</option>
               <option value="g">g</option>
@@ -378,126 +444,196 @@ export const DatabaseView: React.FC<Props> = ({
               <option value="미">미</option>
             </select>
           </div>
-          <div className="w-24 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-right">
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1 text-left">단가(원)</label>
-            <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+          <div className="w-full sm:w-24 bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-md border border-slate-200 dark:border-slate-700 text-right">
+            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-0.5 text-left uppercase">매입단가</label>
+            <span className="text-sm font-bold text-slate-600 dark:text-slate-400">
               {formatCurrency(boxQuantity > 0 ? Math.round(boxCost / boxQuantity) : 0)}
             </span>
           </div>
-          <button 
-            onClick={handleAddOrUpdate}
-            disabled={!name || boxQuantity <= 0}
-            className="px-3 py-1.5 bg-slate-900 dark:bg-blue-600 text-white rounded-md hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1 text-sm h-[34px] transition-colors"
-          >
-            {editingId ? '수정' : <><Plus size={16} /> 추가</>}
-          </button>
-          {editingId && (
-            <>
-              <button 
-                onClick={() => {
-                  handleArchive(editingId);
-                  setEditingId(null);
-                  setName('');
-                  setBoxCost(0);
-                  setBoxQuantity(1);
-                  setUnit('kg');
-                }}
-                className="px-3 py-1.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-md hover:bg-orange-200 dark:hover:bg-orange-900/50 text-sm h-[34px] transition-colors"
-              >
-                보관함 이동
-              </button>
-              <button 
-                onClick={() => {
-                  setEditingId(null);
-                  setName('');
-                  setBoxCost(0);
-                  setBoxQuantity(1);
-                  setUnit('kg');
-                }}
-                className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-300 dark:hover:bg-slate-700 text-sm h-[34px] transition-colors"
-              >
-                취소
-              </button>
-            </>
-          )}
+          <div className="w-full sm:w-24 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 rounded-md border border-blue-100 dark:border-blue-800 text-right">
+            <label className="block text-[10px] font-bold text-blue-500 dark:text-blue-400 mb-0.5 text-left uppercase">매출단가</label>
+            <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+              {formatCurrency(boxQuantity > 0 ? Math.round(salesPrice / boxQuantity) : 0)}
+            </span>
+          </div>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <button 
+              onClick={handleAddOrUpdate}
+              disabled={!name || boxQuantity <= 0}
+              className={`flex-1 sm:flex-none px-6 py-2 rounded-md font-bold text-sm h-[38px] transition-all flex items-center justify-center gap-2 shadow-sm ${
+                editingId 
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                  : 'bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 dark:hover:bg-slate-600 text-white'
+              } disabled:opacity-50`}
+            >
+              {editingId ? '수정 완료' : <><Plus size={18} /> 추가</>}
+            </button>
+            {editingId && (
+              <>
+                <button 
+                  onClick={() => {
+                    handleArchive(editingId);
+                    resetForm();
+                  }}
+                  className="px-4 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-md hover:bg-orange-200 dark:hover:bg-orange-900/50 text-sm font-bold h-[38px] transition-colors shadow-sm"
+                >
+                  보관함
+                </button>
+                <button 
+                  onClick={resetForm}
+                  className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md hover:bg-slate-300 dark:hover:bg-slate-700 text-sm font-bold h-[38px] transition-colors shadow-sm"
+                >
+                  취소
+                </button>
+              </>
+            )}
+          </div>
         </div>
-      )}
+      </div>
+    )}
 
       <div className="flex-1 overflow-auto p-4">
-        <div className="min-w-[800px]">
+        {/* Desktop Table */}
+        <div className="hidden md:block min-w-[800px]">
           <table className="w-full text-sm text-left">
-          <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase border-b border-slate-200 dark:border-slate-800">
-            <tr>
-              <th className="pb-2 w-10 text-center">선택</th>
-              <th className="pb-2">재료명</th>
-              <th className="pb-2">규격</th>
-              <th className="pb-2 text-right">매입가</th>
-              <th className="pb-2 text-right">매출가</th>
-              <th className="pb-2 text-right">수량</th>
-              <th className="pb-2 text-center">단위</th>
-              <th className="pb-2 text-right">단가(원)</th>
-              <th className="pb-2 text-center w-20">관리</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-            {displayedIngredients.map(ing => (
-              <tr 
-                key={ing.id} 
-                className={`hover:bg-blue-50/40 dark:hover:bg-blue-900/20 transition-colors group ${editingId === ing.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}
-                onMouseEnter={(e) => { setHoveredId(ing.id); handleMouseMove(e); }}
-                onMouseMove={handleMouseMove}
-                onMouseLeave={() => setHoveredId(null)}
-              >
-                <td className="py-2 text-center">
-                  <button 
-                    onClick={() => handleToggleSelection(ing.id)}
-                    className={`transition-colors ${ing.isSelectedForMenu ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-700 hover:text-slate-400'}`}
-                  >
-                    {ing.isSelectedForMenu ? <CheckCircle2 size={18} /> : <Circle size={18} />}
-                  </button>
-                </td>
-                <td className="py-2 text-slate-900 dark:text-slate-100 group-hover:text-blue-800 dark:group-hover:text-blue-400 transition-colors">{ing.name}</td>
-                <td className="py-2 text-slate-500 dark:text-slate-400">{ing.spec}</td>
-                <td className="py-2 text-right text-slate-500 dark:text-slate-400">{formatCurrency(ing.boxCost)}</td>
-                <td className="py-2 text-right text-slate-500 dark:text-slate-400">{formatCurrency(ing.salesPrice || 0)}</td>
-                <td className="py-2 text-right text-slate-500 dark:text-slate-400">{ing.boxQuantity}</td>
-                <td className="py-2 text-center text-slate-500 dark:text-slate-400">{ing.unit}</td>
-                <td className="py-2 text-right font-medium text-blue-600 dark:text-blue-400">{formatCurrency(ing.unitCost)}</td>
-                <td className="py-2 text-center space-x-1">
-                  {activeTab === 'active' || activeTab === 'all' ? (
-                    <>
-                      <button onClick={() => handleEdit(ing)} className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition-colors" title="수정">
-                        <Edit2 size={16} />
-                      </button>
-                      <button onClick={() => handleArchive(ing.id)} className="p-1 text-slate-400 hover:text-orange-600 dark:hover:text-orange-400 rounded transition-colors" title="보관">
-                        <Archive size={16} />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={() => handleRestore(ing.id)} className="p-1 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded transition-colors" title="복구">
-                        <RotateCcw size={16} />
-                      </button>
-                      <button onClick={() => handlePermanentDelete(ing.id)} className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded transition-colors" title="영구 삭제">
-                        <Trash2 size={16} />
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {displayedIngredients.length === 0 && (
+            <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase border-b border-slate-200 dark:border-slate-800">
               <tr>
-                <td colSpan={9} className="py-8 text-center text-slate-500 dark:text-slate-400">
-                  {searchQuery 
-                    ? '검색 결과가 없습니다.' 
-                    : (activeTab === 'active' ? '등록된 식자재가 없습니다.' : '데이터가 없습니다.')}
-                </td>
+                <th className="pb-2 w-10 text-center">선택</th>
+                <th className="pb-2">재료명</th>
+                <th className="pb-2">규격</th>
+                <th className="pb-2 text-right">매입가</th>
+                <th className="pb-2 text-right">매출가</th>
+                <th className="pb-2 text-right">수량</th>
+                <th className="pb-2 text-center">단위</th>
+                <th className="pb-2 text-right">매입단가</th>
+                <th className="pb-2 text-right">매출단가</th>
+                <th className="pb-2 text-center w-20">관리</th>
               </tr>
-            )}
-          </tbody>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              {displayedIngredients.map(ing => (
+                <tr 
+                  key={ing.id} 
+                  className={`hover:bg-blue-50/40 dark:hover:bg-blue-900/20 transition-colors group ${editingId === ing.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}
+                  onMouseEnter={(e) => { setHoveredId(ing.id); handleMouseMove(e); }}
+                  onMouseMove={handleMouseMove}
+                  onMouseLeave={() => setHoveredId(null)}
+                >
+                  <td className="py-2 text-center">
+                    <button 
+                      onClick={() => handleToggleSelection(ing.id)}
+                      className={`transition-colors ${ing.isSelectedForMenu ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-700 hover:text-slate-400'}`}
+                    >
+                      {ing.isSelectedForMenu ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                    </button>
+                  </td>
+                  <td className="py-2 text-slate-900 dark:text-slate-100 group-hover:text-blue-800 dark:group-hover:text-blue-400 transition-colors">{ing.name}</td>
+                  <td className="py-2 text-slate-500 dark:text-slate-400">{ing.spec}</td>
+                  <td className="py-2 text-right text-slate-500 dark:text-slate-400">{formatCurrency(ing.boxCost)}</td>
+                  <td className="py-2 text-right text-slate-500 dark:text-slate-400">{formatCurrency(ing.salesPrice || 0)}</td>
+                  <td className="py-2 text-right text-slate-500 dark:text-slate-400">{ing.boxQuantity}</td>
+                  <td className="py-2 text-center text-slate-500 dark:text-slate-400">{ing.unit}</td>
+                  <td className="py-2 text-right text-slate-500 dark:text-slate-400">{formatCurrency(ing.unitCost)}</td>
+                  <td className="py-2 text-right font-medium text-blue-600 dark:text-blue-400">{formatCurrency(ing.unitSalesPrice || 0)}</td>
+                  <td className="py-2 text-center space-x-1">
+                    {isAdmin && (activeTab === 'active' || activeTab === 'all') ? (
+                      <>
+                        <button onClick={() => handleEdit(ing)} className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition-colors" title="수정">
+                          <Edit2 size={16} />
+                        </button>
+                        <button onClick={() => handleArchive(ing.id)} className="p-1 text-slate-400 hover:text-orange-600 dark:hover:text-orange-400 rounded transition-colors" title="보관">
+                          <Archive size={16} />
+                        </button>
+                      </>
+                    ) : isAdmin ? (
+                      <>
+                        <button onClick={() => handleRestore(ing.id)} className="p-1 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded transition-colors" title="복구">
+                          <RotateCcw size={16} />
+                        </button>
+                        <button onClick={() => handlePermanentDelete(ing.id)} className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded transition-colors" title="영구 삭제">
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[10px] text-slate-400">권한 없음</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
+
+        {/* Mobile Cards */}
+        <div className="md:hidden space-y-4">
+          {displayedIngredients.map(ing => (
+            <div 
+              key={ing.id}
+              className={`bg-white dark:bg-slate-900 rounded-xl p-4 border transition-all ${
+                editingId === ing.id 
+                  ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-md' 
+                  : 'border-slate-200 dark:border-slate-800 shadow-sm'
+              }`}
+            >
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => handleToggleSelection(ing.id)}
+                    className={`transition-colors ${ing.isSelectedForMenu ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-700'}`}
+                  >
+                    {ing.isSelectedForMenu ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+                  </button>
+                  <div>
+                    <h4 className="font-bold text-slate-900 dark:text-white">{ing.name}</h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{ing.spec || '규격 없음'} | {ing.unit}</p>
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  {isAdmin && (activeTab === 'active' || activeTab === 'all') ? (
+                    <>
+                      <button onClick={() => handleEdit(ing)} className="p-2 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg bg-slate-50 dark:bg-slate-800">
+                        <Edit2 size={18} />
+                      </button>
+                      <button onClick={() => handleArchive(ing.id)} className="p-2 text-slate-400 hover:text-orange-600 dark:hover:text-orange-400 rounded-lg bg-slate-50 dark:bg-slate-800">
+                        <Archive size={18} />
+                      </button>
+                    </>
+                  ) : isAdmin ? (
+                    <>
+                      <button onClick={() => handleRestore(ing.id)} className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg bg-slate-50 dark:bg-slate-800">
+                        <RotateCcw size={18} />
+                      </button>
+                      <button onClick={() => handlePermanentDelete(ing.id)} className="p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg bg-slate-50 dark:bg-slate-800">
+                        <Trash2 size={18} />
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold mb-1">매입가 (박스)</p>
+                  <p className="font-semibold text-slate-900 dark:text-white">{formatCurrency(ing.boxCost)}</p>
+                  <p className="text-[10px] text-slate-400 mt-1">단가: {formatCurrency(ing.unitCost)}</p>
+                </div>
+                <div className="bg-blue-50/50 dark:bg-blue-900/20 p-2 rounded-lg border border-blue-100 dark:border-blue-800">
+                  <p className="text-[10px] text-blue-500 dark:text-blue-400 uppercase font-bold mb-1">매출가</p>
+                  <p className="font-semibold text-blue-700 dark:text-blue-300">{formatCurrency(ing.salesPrice || 0)}</p>
+                  <p className="text-[10px] text-blue-400 mt-1">단가: {formatCurrency(ing.unitSalesPrice || 0)}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {displayedIngredients.length === 0 && (
+          <div className="py-12 text-center text-slate-500 dark:text-slate-400">
+            {searchQuery 
+              ? '검색 결과가 없습니다.' 
+              : (activeTab === 'active' ? '등록된 식자재가 없습니다.' : '데이터가 없습니다.')}
+          </div>
+        )}
       </div>
 
       {hoveredId && (

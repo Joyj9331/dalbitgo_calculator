@@ -9,7 +9,7 @@ export function cn(...inputs: ClassValue[]) {
 export const calculateTotalCost = (recipe: RecipeItem[], ingredients: Ingredient[]) => {
   return recipe.reduce((total, item) => {
     const ingredient = ingredients.find(i => i.id === item.ingredientId);
-    return total + (ingredient ? ingredient.unitCost * item.quantity : 0);
+    return total + (ingredient ? (ingredient.unitSalesPrice || 0) * item.quantity : 0);
   }, 0);
 };
 

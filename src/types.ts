@@ -20,6 +20,7 @@ export interface Ingredient {
   boxQuantity: number;
   unitCost: number;
   salesPrice: number;
+  unitSalesPrice: number;
   unit: Unit;
   isArchived?: boolean;
   isSelectedForMenu?: boolean;
@@ -31,7 +32,7 @@ export interface IngredientChange {
   ingredientId: string;
   name: string;
   spec: string;
-  type: 'new' | 'deleted' | 'price_change';
+  type: 'new' | 'deleted' | 'price_change' | 'bulk_update';
   prevPurchasePrice?: number;
   currPurchasePrice?: number;
   prevSalesPrice?: number;

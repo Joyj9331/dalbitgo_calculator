@@ -7,7 +7,10 @@ import {
   sendPasswordResetEmail,
   updatePassword,
   signInWithPopup,
-  GoogleAuthProvider
+  GoogleAuthProvider,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { User } from '../types';
@@ -26,24 +29,34 @@ export const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   const createUserDocument = async (user: any, displayName?: string) => {
-    const userDocRef = doc(db, 'users', user.uid);
-    const userDoc = await getDoc(userDocRef);
-    
-    if (!userDoc.exists()) {
-      const isAdminEmail = user.email === 'saemoyang_official@naver.com' || user.email === 'wnsdl9331@gmail.com';
-      const newUser: User = {
-        uid: user.uid,
-        email: user.email || '',
-        name: displayName || user.displayName || '사용자',
-        role: isAdminEmail ? 'admin' : 'user',
-        isApproved: isAdminEmail ? true : false,
-        isActive: true,
-        createdAt: new Date().toISOString()
-      };
-      await setDoc(userDocRef, newUser);
-      return newUser;
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (!userDoc.exists()) {
+        const isAdminEmail = user.email === 'saemoyang_official@naver.com' || user.email === 'wnsdl9331@gmail.com';
+        const newUser: User = {
+          uid: user.uid,
+          email: user.email || '',
+          name: displayName || user.displayName || '사용자',
+          role: isAdminEmail ? 'admin' : 'user',
+          isApproved: isAdminEmail ? true : false,
+          isActive: true,
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(userDocRef, newUser);
+        return newUser;
+      }
+      return userDoc.data() as User;
+    } catch (err: any) {
+      const message = err.message || String(err);
+      if (message.includes('Quota exceeded') || message.includes('resource-exhausted')) {
+        setError('Firestore 무료 할당량(Quota)을 모두 소진했습니다. 내일 다시 시도해 주세요.');
+      } else {
+        setError(message);
+      }
+      throw err;
     }
-    return userDoc.data() as User;
   };
 
   const handleGoogleLogin = async () => {
@@ -77,6 +90,10 @@ export const Auth: React.FC = () => {
         } else {
           localStorage.removeItem('rememberedEmail');
         }
+        
+        // Set persistence based on autoLogin preference
+        await setPersistence(auth, autoLogin ? browserLocalPersistence : browserSessionPersistence);
+        
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         if (!userCredential.user.emailVerified) {
           setError('이메일 인증이 필요합니다. 메일함을 확인해주세요.');
@@ -107,12 +124,13 @@ export const Auth: React.FC = () => {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 font-sans transition-colors">
       <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 dark:border-slate-800 w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-slate-900 dark:bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-white font-bold text-xl">S</span>
+          <div className="w-20 h-20 bg-gradient-to-br from-slate-900 to-slate-800 dark:from-blue-600 dark:to-blue-700 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl transform -rotate-3 transition-transform hover:rotate-0">
+            <span className="text-white font-black text-3xl italic">S</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">SAEMOYANG F&B</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
-            {isForgotPassword ? '비밀번호 찾기' : isLogin ? '로그인' : '회원가입'}
+          <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter mb-1">SAEMOYANG F&B</h1>
+          <div className="h-1 w-12 bg-blue-600 mx-auto rounded-full mb-4"></div>
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            {isForgotPassword ? '비밀번호 찾기' : isLogin ? '관리자 시스템 로그인' : '새로운 계정 등록'}
           </p>
         </div>
         

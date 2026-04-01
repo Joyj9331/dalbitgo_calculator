@@ -42,21 +42,29 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
     }
   }, [isDropdownOpen, searchQuery]);
 
-  const handleAdd = () => {
-    if (!selectedIngredient || quantity <= 0) return;
-    
-    const existing = recipe.find(item => item.ingredientId === selectedIngredient);
+  const addIngredientById = (id: string) => {
+    const ing = ingredients.find(i => i.id === id);
+    if (!ing) return;
+
+    const existing = recipe.find(item => item.ingredientId === id);
     if (existing) {
       setRecipe(recipe.map(item => 
-        item.ingredientId === selectedIngredient 
+        item.ingredientId === id 
           ? { ...item, quantity: item.quantity + quantity }
           : item
       ));
     } else {
-      setRecipe([...recipe, { ingredientId: selectedIngredient, quantity }]);
+      setRecipe([...recipe, { ingredientId: id, quantity }]);
     }
     setSelectedIngredient('');
     setQuantity(1);
+    setIsDropdownOpen(false);
+    setSearchQuery('');
+  };
+
+  const handleAdd = () => {
+    if (!selectedIngredient || quantity <= 0) return;
+    addIngredientById(selectedIngredient);
   };
 
   const handleRemove = (id: string) => {
@@ -65,6 +73,8 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
 
   const handleSave = () => {
     onSave(menu.id, recipe, notes);
+    alert('저장이 완료되었습니다.');
+    onClose();
   };
 
   const totalCost = calculateTotalCost(recipe, ingredients);
@@ -84,13 +94,9 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
     if (e.key === 'Enter') {
       e.preventDefault();
       if (focusedIndex >= 0 && focusedIndex < filteredIngredients.length) {
-        setSelectedIngredient(filteredIngredients[focusedIndex].id);
-        setIsDropdownOpen(false);
-        setSearchQuery('');
+        addIngredientById(filteredIngredients[focusedIndex].id);
       } else if (filteredIngredients.length > 0) {
-        setSelectedIngredient(filteredIngredients[0].id);
-        setIsDropdownOpen(false);
-        setSearchQuery('');
+        addIngredientById(filteredIngredients[0].id);
       }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -173,11 +179,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
                           <button
                             key={ing.id}
                             type="button"
-                            onClick={() => {
-                              setSelectedIngredient(ing.id);
-                              setIsDropdownOpen(false);
-                              setSearchQuery('');
-                            }}
+                            onClick={() => addIngredientById(ing.id)}
                             onMouseEnter={() => setFocusedIndex(index)}
                             className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex justify-between items-center group
                               ${focusedIndex === index ? 'bg-blue-50 dark:bg-blue-900/30' : ''}
@@ -199,7 +201,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
                               <span className="text-[10px] text-slate-400 uppercase tracking-wider">단위: {ing.unit}</span>
                             </div>
                             <div className="text-right">
-                              <div className="font-semibold">{formatCurrency(ing.unitCost)}</div>
+                              <div className="font-semibold">{formatCurrency(ing.unitSalesPrice || 0)}</div>
                               <div className="text-[10px] text-slate-400">1단위당</div>
                             </div>
                           </button>
@@ -249,7 +251,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                 {recipe.map(item => {
                   const ing = ingredients.find(i => i.id === item.ingredientId);
-                  const cost = ing ? ing.unitCost * item.quantity : 0;
+                  const cost = ing ? (ing.unitSalesPrice || 0) * item.quantity : 0;
                   return (
                     <tr key={item.ingredientId} className={`hover:bg-blue-50/40 dark:hover:bg-blue-900/20 transition-colors group ${!ing ? 'bg-rose-50/50 dark:bg-rose-900/10' : ''}`}>
                       <td className="py-2 text-slate-900 dark:text-slate-100 group-hover:text-blue-800 dark:group-hover:text-blue-400 transition-colors">
@@ -264,7 +266,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, onSave, onClos
                       </td>
                       <td className="py-2 text-right text-slate-500 dark:text-slate-400">
                         {ing ? (
-                          <>{formatCurrency(ing.unitCost)}<span className="text-xs">/{ing.unit}</span></>
+                          <>{formatCurrency(ing.unitSalesPrice || 0)}<span className="text-xs">/{ing.unit}</span></>
                         ) : (
                           <span className="text-rose-500">-</span>
                         )}

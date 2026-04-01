@@ -81,29 +81,6 @@ interface FirestoreErrorInfo {
   }
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
 type TabType = Region | '전체보기' | '메뉴 관리' | '데이터 베이스' | '변동사항';
 
 export default function App() {
@@ -128,7 +105,43 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ingredientFileInputRef = useRef<HTMLInputElement>(null);
 
-  const tabs: TabType[] = ['지방권', '광역권', '수도권', '전체보기', '메뉴 관리', '데이터 베이스', '변동사항'];
+  const [globalError, setGlobalError] = useState<string | null>(null);
+
+  const tabs: TabType[] = ['수도권', '광역권', '지방권', '전체보기', '메뉴 관리', '데이터 베이스', '변동사항'];
+
+  const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
+    const message = error instanceof Error ? error.message : String(error);
+    const errInfo: FirestoreErrorInfo = {
+      error: message,
+      authInfo: {
+        userId: auth.currentUser?.uid,
+        email: auth.currentUser?.email,
+        emailVerified: auth.currentUser?.emailVerified,
+        isAnonymous: auth.currentUser?.isAnonymous,
+        tenantId: auth.currentUser?.tenantId,
+        providerInfo: auth.currentUser?.providerData.map(provider => ({
+          providerId: provider.providerId,
+          displayName: provider.displayName,
+          email: provider.email,
+          photoUrl: provider.photoURL
+        })) || []
+      },
+      operationType,
+      path
+    }
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+
+    if (message.includes('Quota exceeded') || message.includes('resource-exhausted') || message.includes('quota-exceeded')) {
+      setGlobalError('Firestore 무료 할당량(Quota)을 모두 소진했습니다. 일일 쓰기/읽기 한도에 도달하여 현재 데이터를 저장하거나 불러올 수 없습니다. 내일 오전 9시(KST) 이후에 다시 시도해 주세요.');
+    } else {
+      setGlobalError(`오류가 발생했습니다: ${message}`);
+    }
+
+    // Auto-clear non-quota errors after 5 seconds
+    if (!message.includes('Quota exceeded') && !message.includes('resource-exhausted')) {
+      setTimeout(() => setGlobalError(null), 5000);
+    }
+  };
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -239,21 +252,41 @@ export default function App() {
     return <div className="min-h-screen flex items-center justify-center bg-slate-50">로딩 중...</div>;
   }
 
+  const renderGlobalError = () => globalError && (
+    <div className="fixed top-0 left-0 right-0 z-[100] bg-rose-600 text-white px-4 py-3 shadow-lg flex items-center justify-between animate-in slide-in-from-top duration-300">
+      <div className="flex items-center gap-3">
+        <AlertTriangle size={20} />
+        <p className="text-sm font-medium">{globalError}</p>
+      </div>
+      <button onClick={() => setGlobalError(null)} className="p-1 hover:bg-white/20 rounded-full transition-colors">
+        <X size={18} />
+      </button>
+    </div>
+  );
+
   if (!currentUser) {
-    return <Auth />;
+    return (
+      <>
+        {renderGlobalError()}
+        <Auth />
+      </>
+    );
   }
 
   if (!currentUser.isApproved && currentUser.role !== 'admin') {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center max-w-md w-full">
-          <h2 className="text-xl font-bold text-slate-900 mb-2">승인 대기 중</h2>
-          <p className="text-slate-600 mb-6">관리자의 가입 승인을 기다리고 있습니다. 승인 후 이용 가능합니다.</p>
-          <button onClick={handleLogout} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200">
-            로그아웃
-          </button>
+      <>
+        {renderGlobalError()}
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+          <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 text-center max-w-md w-full">
+            <h2 className="text-xl font-bold text-slate-900 mb-2">승인 대기 중</h2>
+            <p className="text-slate-600 mb-6">관리자의 가입 승인을 기다리고 있습니다. 승인 후 이용 가능합니다.</p>
+            <button onClick={handleLogout} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200">
+              로그아웃
+            </button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -266,8 +299,7 @@ export default function App() {
       setIsMenuModalOpen(false);
       setEditingMenu(undefined);
     } catch (error) {
-      console.error('Error saving menu:', error);
-      alert('메뉴 저장 실패');
+      handleFirestoreError(error, OperationType.WRITE, `menus/${menu.id}`);
     }
   };
 
@@ -276,8 +308,7 @@ export default function App() {
       try {
         await updateDoc(doc(db, 'menus', id), { isArchived: true });
       } catch (error) {
-        console.error('Error archiving menu:', error);
-        alert('메뉴 보관 실패');
+        handleFirestoreError(error, OperationType.UPDATE, `menus/${id}`);
       }
     }
   };
@@ -286,8 +317,7 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'menus', id), { isArchived: false });
     } catch (error) {
-      console.error('Error restoring menu:', error);
-      alert('메뉴 복구 실패');
+      handleFirestoreError(error, OperationType.UPDATE, `menus/${id}`);
     }
   };
 
@@ -297,22 +327,25 @@ export default function App() {
       setIsMenuModalOpen(false);
       setEditingMenu(undefined);
     } catch (error) {
-      console.error('Error deleting menu:', error);
-      alert('메뉴 영구 삭제 실패');
+      handleFirestoreError(error, OperationType.DELETE, `menus/${id}`);
     }
   };
 
   const handleDeleteAllMenus = async () => {
     try {
-      const batch = writeBatch(db);
-      menus.forEach(menu => {
-        batch.delete(doc(db, 'menus', menu.id));
-      });
-      await batch.commit();
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < menus.length; i += CHUNK_SIZE) {
+        const batch = writeBatch(db);
+        const chunk = menus.slice(i, i + CHUNK_SIZE);
+        chunk.forEach(menu => {
+          batch.delete(doc(db, 'menus', menu.id));
+        });
+        await batch.commit();
+      }
       setShowDeleteAllMenusConfirm(false);
+      alert('모든 메뉴가 삭제되었습니다.');
     } catch (error) {
-      console.error('Error deleting all menus:', error);
-      alert('메뉴 전체 삭제 실패');
+      handleFirestoreError(error, OperationType.DELETE, 'menus');
     }
   };
 
@@ -322,8 +355,7 @@ export default function App() {
       setIsRecipeModalOpen(false);
       setRecipeMenu(null);
     } catch (error) {
-      console.error('Error saving recipe:', error);
-      alert('레시피 저장 실패');
+      handleFirestoreError(error, OperationType.UPDATE, `menus/${menuId}`);
     }
   };
 
@@ -344,74 +376,84 @@ export default function App() {
         hasAlert: false
       });
     } catch (error) {
-      console.error('Error acknowledging alert:', error);
-      alert('알림 해결 실패');
+      handleFirestoreError(error, OperationType.UPDATE, `menus/${menuId}`);
     }
   };
 
   const handleDeleteAllIngredients = async () => {
+    if (!window.confirm('데이터베이스의 모든 식자재와 변경 이력을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
     try {
-      const batch = writeBatch(db);
-      
-      // Delete all ingredients
-      ingredients.forEach(ing => {
-        batch.delete(doc(db, 'ingredients', ing.id));
-      });
-      
-      // Delete all ingredient changes
-      ingredientChanges.forEach(change => {
-        batch.delete(doc(db, 'ingredient_changes', change.id));
-      });
-      
-      // Reset all menus (clear alerts and acknowledged cost)
-      menus.forEach(menu => {
-        batch.update(doc(db, 'menus', menu.id), { 
-          hasAlert: false,
-          lastAcknowledgedCost: deleteField()
+      const CHUNK_SIZE = 500;
+      const allOps = [
+        ...ingredients.map(ing => ({ type: 'delete' as const, ref: doc(db, 'ingredients', ing.id) })),
+        ...ingredientChanges.map(change => ({ type: 'delete' as const, ref: doc(db, 'ingredient_changes', change.id) })),
+        ...menus.map(menu => ({ 
+          type: 'update' as const, 
+          ref: doc(db, 'menus', menu.id), 
+          data: { hasAlert: false, lastAcknowledgedCost: deleteField() } 
+        }))
+      ];
+
+      for (let i = 0; i < allOps.length; i += CHUNK_SIZE) {
+        const batch = writeBatch(db);
+        const chunk = allOps.slice(i, i + CHUNK_SIZE);
+        chunk.forEach(op => {
+          if (op.type === 'delete') batch.delete(op.ref);
+          else if (op.type === 'update') batch.update(op.ref, op.data);
         });
-      });
+        await batch.commit();
+      }
       
-      await batch.commit();
       alert('전체 데이터가 초기화되었습니다. 이제 새로운 데이터를 등록할 수 있습니다.');
     } catch (error) {
-      console.error('Error resetting data:', error);
-      alert('데이터 초기화 실패');
+      handleFirestoreError(error, OperationType.DELETE, 'all_data');
     }
   };
 
   const handleUnselectAllIngredients = async () => {
     if (!window.confirm('메뉴용 식자재 선택을 모두 해제하시겠습니까?')) return;
     try {
-      const batch = writeBatch(db);
+      const CHUNK_SIZE = 500;
+      const allOps: any[] = [];
+      
       ingredients.forEach(ing => {
         if (ing.isSelectedForMenu) {
-          batch.update(doc(db, 'ingredients', ing.id), { isSelectedForMenu: false });
+          allOps.push({ type: 'update', ref: doc(db, 'ingredients', ing.id), data: { isSelectedForMenu: false } });
         }
       });
-      // Mark all menus with recipes as having alerts
+      
       menus.forEach(menu => {
         if (menu.recipe.length > 0) {
-          batch.update(doc(db, 'menus', menu.id), { hasAlert: true });
+          allOps.push({ type: 'update', ref: doc(db, 'menus', menu.id), data: { hasAlert: true } });
         }
       });
-      await batch.commit();
+
+      for (let i = 0; i < allOps.length; i += CHUNK_SIZE) {
+        const batch = writeBatch(db);
+        const chunk = allOps.slice(i, i + CHUNK_SIZE);
+        chunk.forEach(op => {
+          batch.update(op.ref, op.data);
+        });
+        await batch.commit();
+      }
+      
       alert('메뉴용 식자재 선택이 모두 해제되었습니다.');
     } catch (error) {
-      console.error('Error unselecting all ingredients:', error);
-      alert('메뉴용 식자재 선택 해제 실패');
+      handleFirestoreError(error, OperationType.UPDATE, 'ingredients');
     }
   };
 
   const handleSaveIngredients = async (newIngredients: Ingredient[]) => {
     try {
-      const batch = writeBatch(db);
+      const CHUNK_SIZE = 500;
       const timestamp = new Date().toISOString();
+      const allOps: any[] = [];
       
       // Find deleted ingredients
       const deletedIngredients = ingredients.filter(ing => !newIngredients.find(u => u.id === ing.id));
       
       deletedIngredients.forEach(ing => {
-        batch.delete(doc(db, 'ingredients', ing.id));
+        allOps.push({ type: 'delete', ref: doc(db, 'ingredients', ing.id) });
         
         // Record deletion change
         const changeId = `change-${Date.now()}-${ing.id}`;
@@ -422,71 +464,130 @@ export default function App() {
           spec: ing.spec || '',
           type: 'deleted',
           prevPurchasePrice: ing.unitCost || 0,
-          prevSalesPrice: ing.salesPrice || 0,
+          prevSalesPrice: ing.unitSalesPrice || 0,
           timestamp
         };
-        batch.set(doc(db, 'ingredient_changes', changeId), change);
+        allOps.push({ type: 'set', ref: doc(db, 'ingredient_changes', changeId), data: change });
       });
 
-      newIngredients.forEach(ing => {
-        const ingRef = doc(db, 'ingredients', ing.id);
-        const prevIng = ingredients.find(p => p.id === ing.id);
-        
-        if (!prevIng) {
-          // New registration
-          const changeId = `change-${Date.now()}-${ing.id}`;
-          const change: IngredientChange = {
-            id: changeId,
-            ingredientId: ing.id,
-            name: ing.name,
-            spec: ing.spec || '',
-            type: 'new',
-            currPurchasePrice: ing.unitCost || 0,
-            currSalesPrice: ing.salesPrice || 0,
-            timestamp
-          };
-          batch.set(doc(db, 'ingredient_changes', changeId), change);
-        } else if (Math.abs(prevIng.unitCost - ing.unitCost) > 0.01 || prevIng.salesPrice !== ing.salesPrice) {
-          // Price change
-          const changeId = `change-${Date.now()}-${ing.id}`;
-          const change: IngredientChange = {
-            id: changeId,
-            ingredientId: ing.id,
-            name: ing.name,
-            spec: ing.spec || '',
-            type: 'price_change',
-            prevPurchasePrice: prevIng.unitCost || 0,
-            currPurchasePrice: ing.unitCost || 0,
-            prevSalesPrice: prevIng.salesPrice || 0,
-            currSalesPrice: ing.salesPrice || 0,
-            timestamp
-          };
-          batch.set(doc(db, 'ingredient_changes', changeId), change);
+      const menusToAlert = new Set<string>();
+      let changeCount = 0;
 
-          // Mark menus using this ingredient as having an alert
-          menus.forEach(menu => {
-            if (menu.recipe.some(item => item.ingredientId === ing.id)) {
-              batch.update(doc(db, 'menus', menu.id), { hasAlert: true });
-            }
-          });
+      newIngredients.forEach(ing => {
+        const prevIng = ingredients.find(p => p.id === ing.id);
+        const isNew = !prevIng;
+        const isChanged = prevIng && (
+          prevIng.name !== ing.name ||
+          prevIng.spec !== ing.spec ||
+          prevIng.unit !== ing.unit ||
+          prevIng.boxCost !== ing.boxCost ||
+          prevIng.boxQuantity !== ing.boxQuantity ||
+          prevIng.salesPrice !== ing.salesPrice ||
+          prevIng.isArchived !== ing.isArchived ||
+          prevIng.isSelectedForMenu !== ing.isSelectedForMenu
+        );
+
+        if (isNew || isChanged) {
+          allOps.push({ type: 'set', ref: doc(db, 'ingredients', ing.id), data: ing });
+          
+          if (isNew) {
+            changeCount++;
+            const changeId = `change-${Date.now()}-${ing.id}`;
+            const change: IngredientChange = {
+              id: changeId,
+              ingredientId: ing.id,
+              name: ing.name,
+              spec: ing.spec || '',
+              type: 'new',
+              currPurchasePrice: ing.unitCost || 0,
+              currSalesPrice: ing.unitSalesPrice || 0,
+              timestamp
+            };
+            allOps.push({ type: 'set', ref: doc(db, 'ingredient_changes', changeId), data: change });
+          } else if (Math.abs(prevIng.unitCost - ing.unitCost) > 0.01 || Math.abs((prevIng.unitSalesPrice || 0) - (ing.unitSalesPrice || 0)) > 0.01) {
+            changeCount++;
+            const changeId = `change-${Date.now()}-${ing.id}`;
+            const change: IngredientChange = {
+              id: changeId,
+              ingredientId: ing.id,
+              name: ing.name,
+              spec: ing.spec || '',
+              type: 'price_change',
+              prevPurchasePrice: prevIng.unitCost || 0,
+              currPurchasePrice: ing.unitCost || 0,
+              prevSalesPrice: prevIng.unitSalesPrice || 0,
+              currSalesPrice: ing.unitSalesPrice || 0,
+              timestamp
+            };
+            allOps.push({ type: 'set', ref: doc(db, 'ingredient_changes', changeId), data: change });
+
+            // Mark menus using this ingredient as having an alert
+            menus.forEach(menu => {
+              if (menu.recipe.some(item => item.ingredientId === ing.id)) {
+                menusToAlert.add(menu.id);
+              }
+            });
+          }
         }
-        
-        batch.set(ingRef, ing);
       });
 
       // Also mark menus with deleted ingredients as having an alert
       deletedIngredients.forEach(ing => {
         menus.forEach(menu => {
           if (menu.recipe.some(item => item.ingredientId === ing.id)) {
-            batch.update(doc(db, 'menus', menu.id), { hasAlert: true });
+            menusToAlert.add(menu.id);
           }
         });
       });
-      
-      await batch.commit();
+
+      // Apply alerts to menus
+      menusToAlert.forEach(menuId => {
+        allOps.push({ type: 'update', ref: doc(db, 'menus', menuId), data: { hasAlert: true } });
+      });
+
+      // If there are too many changes, replace individual change records with a single bulk update record to save quota
+      if (changeCount > 50) {
+        // Filter out individual change records
+        const filteredOps = allOps.filter(op => op.ref.path.split('/')[0] !== 'ingredient_changes');
+        
+        // Add one bulk update record
+        const bulkChangeId = `bulk-change-${Date.now()}`;
+        const bulkChange: IngredientChange = {
+          id: bulkChangeId,
+          ingredientId: 'bulk',
+          name: '대량 업데이트',
+          spec: `${changeCount}개 품목`,
+          type: 'bulk_update',
+          timestamp
+        };
+        filteredOps.push({ type: 'set', ref: doc(db, 'ingredient_changes', bulkChangeId), data: bulkChange });
+        
+        // Use filtered ops
+        for (let i = 0; i < filteredOps.length; i += CHUNK_SIZE) {
+          const batch = writeBatch(db);
+          const chunk = filteredOps.slice(i, i + CHUNK_SIZE);
+          chunk.forEach(op => {
+            if (op.type === 'set') batch.set(op.ref, op.data);
+            else if (op.type === 'update') batch.update(op.ref, op.data);
+            else if (op.type === 'delete') batch.delete(op.ref);
+          });
+          await batch.commit();
+        }
+      } else {
+        // Use all ops in chunks
+        for (let i = 0; i < allOps.length; i += CHUNK_SIZE) {
+          const batch = writeBatch(db);
+          const chunk = allOps.slice(i, i + CHUNK_SIZE);
+          chunk.forEach(op => {
+            if (op.type === 'set') batch.set(op.ref, op.data);
+            else if (op.type === 'update') batch.update(op.ref, op.data);
+            else if (op.type === 'delete') batch.delete(op.ref);
+          });
+          await batch.commit();
+        }
+      }
     } catch (error) {
-      console.error('Error saving ingredients:', error);
-      alert('식자재 저장 실패');
+      handleFirestoreError(error, OperationType.UPDATE, 'ingredients');
     }
   };
 
@@ -513,15 +614,19 @@ export default function App() {
           }));
           
           if (newMenus.length > 0) {
-            const batch = writeBatch(db);
-            newMenus.forEach(menu => {
-              batch.set(doc(db, 'menus', menu.id), menu);
-            });
-            await batch.commit();
+            const CHUNK_SIZE = 500;
+            for (let i = 0; i < newMenus.length; i += CHUNK_SIZE) {
+              const batch = writeBatch(db);
+              const chunk = newMenus.slice(i, i + CHUNK_SIZE);
+              chunk.forEach(menu => {
+                batch.set(doc(db, 'menus', menu.id), menu);
+              });
+              await batch.commit();
+            }
             alert(`${newMenus.length}개의 메뉴가 추가되었습니다.`);
           }
         } catch (error) {
-          alert('CSV 파일 형식이 올바르지 않습니다. (필수 헤더: 메뉴명, 지방권_판매가, 광역권_판매가, 수도권_판매가)');
+          handleFirestoreError(error, OperationType.WRITE, 'menus_import');
         }
       }
     });
@@ -538,9 +643,8 @@ export default function App() {
       skipEmptyLines: true,
       complete: async (results) => {
         try {
-          const batch = writeBatch(db);
           const timestamp = new Date().toISOString();
-          let count = 0;
+          const allOps: any[] = [];
 
           for (const row of results.data) {
             const name = row['상품명'];
@@ -552,7 +656,6 @@ export default function App() {
             const salesPrice = parseFloat(row['매출가']?.replace(/,/g, '')) || 0;
             const boxQuantity = parseFloat(row['내품수량']) || 1;
             
-            // Generate a stable ID based on name and spec
             const id = `ing-${name}-${spec}`.replace(/\s+/g, '-');
             const prevIng = ingredients.find(p => p.id === id);
             
@@ -565,48 +668,81 @@ export default function App() {
               boxQuantity: boxQuantity,
               unitCost: boxQuantity > 0 ? purchasePrice / boxQuantity : purchasePrice,
               salesPrice,
+              unitSalesPrice: boxQuantity > 0 ? salesPrice / boxQuantity : salesPrice,
               isArchived: false,
               isSelectedForMenu: prevIng?.isSelectedForMenu || false,
               createdAt: timestamp
             };
             
-            if (!prevIng) {
-              const changeId = `change-${Date.now()}-${id}`;
-              batch.set(doc(db, 'ingredient_changes', changeId), {
-                id: changeId,
-                ingredientId: id,
-                name,
-                spec: spec || '',
-                type: 'new',
-                currPurchasePrice: newIng.unitCost,
-                currSalesPrice: salesPrice,
-                timestamp
-              });
-            } else if (Math.abs(prevIng.unitCost - newIng.unitCost) > 0.01 || prevIng.salesPrice !== salesPrice) {
-              const changeId = `change-${Date.now()}-${id}`;
-              batch.set(doc(db, 'ingredient_changes', changeId), {
-                id: changeId,
-                ingredientId: id,
-                name,
-                spec: spec || '',
-                type: 'price_change',
-                prevPurchasePrice: prevIng.unitCost,
-                currPurchasePrice: newIng.unitCost,
-                prevSalesPrice: prevIng.salesPrice,
-                currSalesPrice: salesPrice,
-                timestamp
-              });
-            }
+            const isNew = !prevIng;
+            const isChanged = prevIng && (
+              prevIng.name !== newIng.name ||
+              prevIng.spec !== newIng.spec ||
+              prevIng.unit !== newIng.unit ||
+              prevIng.boxCost !== newIng.boxCost ||
+              prevIng.boxQuantity !== newIng.boxQuantity ||
+              prevIng.salesPrice !== newIng.salesPrice
+            );
 
-            batch.set(doc(db, 'ingredients', id), newIng);
-            count++;
+            if (isNew || isChanged) {
+              if (isNew) {
+                const changeId = `change-${Date.now()}-${id}`;
+                allOps.push({
+                  type: 'set',
+                  ref: doc(db, 'ingredient_changes', changeId),
+                  data: {
+                    id: changeId,
+                    ingredientId: id,
+                    name,
+                    spec: spec || '',
+                    type: 'new',
+                    currPurchasePrice: newIng.unitCost,
+                    currSalesPrice: salesPrice,
+                    timestamp
+                  }
+                });
+              } else if (Math.abs(prevIng.unitCost - newIng.unitCost) > 0.01 || prevIng.salesPrice !== salesPrice) {
+                const changeId = `change-${Date.now()}-${id}`;
+                allOps.push({
+                  type: 'set',
+                  ref: doc(db, 'ingredient_changes', changeId),
+                  data: {
+                    id: changeId,
+                    ingredientId: id,
+                    name,
+                    spec: spec || '',
+                    type: 'price_change',
+                    prevPurchasePrice: prevIng.unitCost,
+                    currPurchasePrice: newIng.unitCost,
+                    prevSalesPrice: prevIng.salesPrice,
+                    currSalesPrice: salesPrice,
+                    timestamp
+                  }
+                });
+              }
+
+              allOps.push({ type: 'set', ref: doc(db, 'ingredients', id), data: newIng });
+            }
           }
 
-          await batch.commit();
-          alert(`${count}개의 식자재 데이터가 업데이트되었습니다.`);
+          if (allOps.length > 0) {
+            const CHUNK_SIZE = 500;
+            for (let i = 0; i < allOps.length; i += CHUNK_SIZE) {
+              const batch = writeBatch(db);
+              const chunk = allOps.slice(i, i + CHUNK_SIZE);
+              chunk.forEach(op => {
+                if (op.type === 'set') batch.set(op.ref, op.data);
+                else if (op.type === 'update') batch.update(op.ref, op.data);
+                else if (op.type === 'delete') batch.delete(op.ref);
+              });
+              await batch.commit();
+            }
+            alert(`${allOps.filter(o => o.ref.path.startsWith('ingredients/')).length}개의 식자재 데이터가 업데이트되었습니다.`);
+          } else {
+            alert('업데이트할 변경 사항이 없습니다.');
+          }
         } catch (error) {
-          console.error('CSV Import Error:', error);
-          alert('CSV 파일 처리 중 오류가 발생했습니다.');
+          handleFirestoreError(error, OperationType.WRITE, 'ingredients_import');
         }
       }
     });
@@ -619,7 +755,7 @@ export default function App() {
     try {
       await deleteDoc(doc(db, 'ingredient_changes', id));
     } catch (error) {
-      console.error('Error deleting change:', error);
+      handleFirestoreError(error, OperationType.DELETE, `ingredient_changes/${id}`);
     }
   };
 
@@ -656,6 +792,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
+      {renderGlobalError()}
       <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
         
         {/* Header */}
@@ -722,7 +859,7 @@ export default function App() {
 
         {showAdminPanel && currentUser.role === 'admin' && (
           <div className="mb-8">
-            <AdminPanel />
+            <AdminPanel onFirestoreError={handleFirestoreError} ingredients={ingredients} />
           </div>
         )}
 

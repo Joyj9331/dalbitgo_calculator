@@ -62,6 +62,7 @@ export const IngredientManager: React.FC<Props> = ({ ingredients: initialIngredi
 
             if (name && !isNaN(boxCost)) {
               const unitCost = Math.round(boxCost / boxQuantity);
+              const unitSalesPrice = Math.round(salesPrice / boxQuantity);
 
               newIngredients.push({
                 id: Date.now().toString() + Math.random().toString(36).substring(7),
@@ -71,6 +72,7 @@ export const IngredientManager: React.FC<Props> = ({ ingredients: initialIngredi
                 salesPrice,
                 boxQuantity,
                 unitCost,
+                unitSalesPrice,
                 unit,
                 isArchived: false,
                 createdAt: new Date().toISOString()
