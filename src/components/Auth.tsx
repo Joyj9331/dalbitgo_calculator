@@ -5,9 +5,11 @@ import {
   createUserWithEmailAndPassword, 
   sendEmailVerification, 
   sendPasswordResetEmail,
-  updatePassword
+  updatePassword,
+  signInWithPopup,
+  GoogleAuthProvider
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { User } from '../types';
 
 export const Auth: React.FC = () => {
@@ -20,6 +22,41 @@ export const Auth: React.FC = () => {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const createUserDocument = async (user: any, displayName?: string) => {
+    const userDocRef = doc(db, 'users', user.uid);
+    const userDoc = await getDoc(userDocRef);
+    
+    if (!userDoc.exists()) {
+      const isAdminEmail = user.email === 'saemoyang_official@naver.com' || user.email === 'wnsdl9331@gmail.com';
+      const newUser: User = {
+        uid: user.uid,
+        email: user.email || '',
+        name: displayName || user.displayName || '사용자',
+        role: isAdminEmail ? 'admin' : 'user',
+        isApproved: isAdminEmail ? true : false,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(userDocRef, newUser);
+      return newUser;
+    }
+    return userDoc.data() as User;
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      await createUserDocument(result.user);
+    } catch (err: any) {
+      setError(err.message || '구글 로그인 실패');
+    } finally {
+      setLoading(true); // App.tsx will handle the redirect
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,6 +74,8 @@ export const Auth: React.FC = () => {
         if (!userCredential.user.emailVerified) {
           setError('이메일 인증이 필요합니다. 메일함을 확인해주세요.');
           await auth.signOut();
+        } else {
+          await createUserDocument(userCredential.user);
         }
       } else {
         // Signup
@@ -44,18 +83,7 @@ export const Auth: React.FC = () => {
         await sendEmailVerification(userCredential.user);
         
         // Create user document
-        const isAdminEmail = email === 'saemoyang_official@naver.com';
-        const newUser: User = {
-          uid: userCredential.user.uid,
-          email: userCredential.user.email || email,
-          name,
-          role: isAdminEmail ? 'admin' : 'user',
-          isApproved: isAdminEmail ? true : false,
-          isActive: true,
-          createdAt: new Date().toISOString()
-        };
-        
-        await setDoc(doc(db, 'users', newUser.uid), newUser);
+        await createUserDocument(userCredential.user, name);
         
         setMessage('회원가입이 완료되었습니다. 이메일 인증 후 관리자 승인을 기다려주세요.');
         await auth.signOut();
@@ -81,55 +109,75 @@ export const Auth: React.FC = () => {
         {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg">{error}</div>}
         {message && <div className="mb-4 p-3 bg-green-50 text-green-600 text-sm rounded-lg">{message}</div>}
 
-        <form onSubmit={handleAuth} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">이메일</label>
-            <input 
-              type="email" 
-              required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full border border-slate-200 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all text-sm"
-              placeholder="이메일을 입력하세요"
-            />
-          </div>
-          
-          {!isForgotPassword && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">비밀번호</label>
-              <input 
-                type="password" 
-                required
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="w-full border border-slate-200 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all text-sm"
-                placeholder="비밀번호를 입력하세요"
-              />
-            </div>
-          )}
-
-          {!isLogin && !isForgotPassword && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">이름</label>
-              <input 
-                type="text" 
-                required
-                value={name}
-                onChange={e => setName(e.target.value)}
-                className="w-full border border-slate-200 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all text-sm"
-                placeholder="이름을 입력하세요"
-              />
-            </div>
-          )}
-
+        <div className="space-y-4">
           <button 
-            type="submit" 
+            onClick={handleGoogleLogin}
             disabled={loading}
-            className="w-full bg-slate-900 text-white py-2.5 rounded-lg hover:bg-slate-800 font-medium transition-colors mt-4 disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 text-slate-700 py-2.5 rounded-lg hover:bg-slate-50 font-medium transition-colors text-sm disabled:opacity-50"
           >
-            {loading ? '처리 중...' : isForgotPassword ? '비밀번호 재설정 메일 보내기' : isLogin ? '로그인' : '가입하기'}
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+            Google로 계속하기
           </button>
-        </form>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-100"></div>
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2 text-slate-400">또는</span>
+            </div>
+          </div>
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">이메일</label>
+              <input 
+                type="email" 
+                required
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full border border-slate-200 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all text-sm"
+                placeholder="이메일을 입력하세요"
+              />
+            </div>
+            
+            {!isForgotPassword && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">비밀번호</label>
+                <input 
+                  type="password" 
+                  required
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full border border-slate-200 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all text-sm"
+                  placeholder="비밀번호를 입력하세요"
+                />
+              </div>
+            )}
+
+            {!isLogin && !isForgotPassword && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">이름</label>
+                <input 
+                  type="text" 
+                  required
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className="w-full border border-slate-200 px-3 py-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all text-sm"
+                  placeholder="이름을 입력하세요"
+                />
+              </div>
+            )}
+
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-slate-900 text-white py-2.5 rounded-lg hover:bg-slate-800 font-medium transition-colors mt-4 disabled:opacity-50"
+            >
+              {loading ? '처리 중...' : isForgotPassword ? '비밀번호 재설정 메일 보내기' : isLogin ? '로그인' : '가입하기'}
+            </button>
+          </form>
+        </div>
 
         <div className="mt-6 text-center text-sm text-slate-500 space-y-2">
           {isForgotPassword ? (

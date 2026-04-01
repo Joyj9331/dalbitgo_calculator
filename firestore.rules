@@ -49,9 +49,10 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && (
+        request.auth.token.email == "saemoyang_official@naver.com" ||
+        request.auth.token.email == "wnsdl9331@gmail.com" ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-        (request.auth.token.email == "saemoyang_official@naver.com")
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
     }
 
@@ -72,37 +73,56 @@ service cloud.firestore {
 
     // Domain Validators
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'name', 'role', 'isApproved', 'isActive', 'createdAt']) &&
+      return hasOnlyAllowedFields(['uid', 'email', 'name', 'role', 'isApproved', 'isActive', 'theme', 'createdAt']) &&
              data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
              data.email is string && data.email.size() > 0 && data.email.size() < 100 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 50 &&
              data.role in ['admin', 'user'] &&
              data.isApproved is bool &&
              data.isActive is bool &&
+             (data.theme in ['light', 'dark'] || !('theme' in data)) &&
              data.createdAt is string;
     }
 
     function isValidMenu(data) {
-      return hasOnlyAllowedFields(['id', 'name', 'prices', 'recipe', 'notes', 'isArchived', 'createdAt']) &&
+      return hasOnlyAllowedFields(['id', 'name', 'prices', 'recipe', 'notes', 'isArchived', 'createdAt', 'hasAlert', 'lastAcknowledgedCost']) &&
              data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.prices is map &&
              data.recipe is list && data.recipe.size() <= 100 &&
              (data.notes is string && data.notes.size() <= 2000 || !('notes' in data)) &&
              data.isArchived is bool &&
-             data.createdAt is string;
+             data.createdAt is string &&
+             (data.hasAlert is bool || !('hasAlert' in data)) &&
+             (data.lastAcknowledgedCost is number || !('lastAcknowledgedCost' in data));
     }
 
     function isValidIngredient(data) {
-      return hasOnlyAllowedFields(['id', 'name', 'boxCost', 'boxQuantity', 'unitCost', 'unit', 'isArchived', 'createdAt']) &&
+      return hasOnlyAllowedFields(['id', 'name', 'spec', 'boxCost', 'boxQuantity', 'unitCost', 'salesPrice', 'unit', 'isArchived', 'isSelectedForMenu', 'createdAt']) &&
              data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (data.spec is string || !('spec' in data)) &&
              data.boxCost is number && data.boxCost >= 0 &&
              data.boxQuantity is number && data.boxQuantity > 0 &&
              data.unitCost is number && data.unitCost >= 0 &&
+             (data.salesPrice is number && data.salesPrice >= 0 || !('salesPrice' in data)) &&
              data.unit in ['kg', 'g', 'ea', '미'] &&
              data.isArchived is bool &&
+             (data.isSelectedForMenu is bool || !('isSelectedForMenu' in data)) &&
              data.createdAt is string;
+    }
+
+    function isValidIngredientChange(data) {
+      return hasOnlyAllowedFields(['id', 'ingredientId', 'name', 'spec', 'type', 'prevPurchasePrice', 'currPurchasePrice', 'prevSalesPrice', 'currSalesPrice', 'timestamp']) &&
+             data.id is string && data.ingredientId is string &&
+             data.name is string && data.name.size() > 0 &&
+             (data.spec is string || !('spec' in data)) &&
+             data.type in ['new', 'deleted', 'price_change'] &&
+             (data.prevPurchasePrice is number || !('prevPurchasePrice' in data)) &&
+             (data.currPurchasePrice is number || !('currPurchasePrice' in data)) &&
+             (data.prevSalesPrice is number || !('prevSalesPrice' in data)) &&
+             (data.currSalesPrice is number || !('currSalesPrice' in data)) &&
+             data.timestamp is string;
     }
 
     // Rules
@@ -136,6 +156,12 @@ service cloud.firestore {
       allow create: if (isAdmin() || isApprovedUser()) && isValidIngredient(request.resource.data);
       allow update: if (isAdmin() || isApprovedUser()) && isValidIngredient(request.resource.data) && areImmutableFieldsUnchanged(['id', 'createdAt']);
       allow delete: if isAdmin() || isApprovedUser();
+    }
+
+    match /ingredient_changes/{changeId} {
+      allow read: if isAdmin() || isApprovedUser();
+      allow create: if isAdmin() && isValidIngredientChange(request.resource.data);
+      allow delete: if isAdmin();
     }
   }
 }

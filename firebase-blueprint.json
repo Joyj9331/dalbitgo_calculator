@@ -11,6 +11,7 @@
         "role": { "type": "string", "enum": ["admin", "user"] },
         "isApproved": { "type": "boolean" },
         "isActive": { "type": "boolean" },
+        "theme": { "type": "string", "enum": ["light", "dark"] },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "email", "name", "role", "isApproved", "isActive", "createdAt"]
@@ -41,6 +42,8 @@
           }
         },
         "notes": { "type": "string" },
+        "hasAlert": { "type": "boolean" },
+        "lastAcknowledgedCost": { "type": "number" },
         "isArchived": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
@@ -53,14 +56,35 @@
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
+        "spec": { "type": "string" },
         "boxCost": { "type": "number" },
         "boxQuantity": { "type": "number" },
         "unitCost": { "type": "number" },
+        "salesPrice": { "type": "number" },
         "unit": { "type": "string", "enum": ["kg", "g", "ea", "미"] },
         "isArchived": { "type": "boolean" },
+        "isSelectedForMenu": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "name", "boxCost", "boxQuantity", "unitCost", "unit", "isArchived", "createdAt"]
+    },
+    "IngredientChange": {
+      "title": "IngredientChange",
+      "description": "Record of ingredient price or status changes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ingredientId": { "type": "string" },
+        "name": { "type": "string" },
+        "spec": { "type": "string" },
+        "type": { "type": "string", "enum": ["new", "deleted", "price_change"] },
+        "prevPurchasePrice": { "type": "number" },
+        "currPurchasePrice": { "type": "number" },
+        "prevSalesPrice": { "type": "number" },
+        "currSalesPrice": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ingredientId", "name", "type", "timestamp"]
     }
   },
   "firestore": {
@@ -75,6 +99,10 @@
     "/ingredients/{ingredientId}": {
       "schema": { "$ref": "#/entities/Ingredient" },
       "description": "Ingredients"
+    },
+    "/ingredient_changes/{changeId}": {
+      "schema": { "$ref": "#/entities/IngredientChange" },
+      "description": "Ingredient change history"
     }
   }
 }

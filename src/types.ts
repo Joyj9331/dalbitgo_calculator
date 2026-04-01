@@ -8,18 +8,35 @@ export interface User {
   role: 'admin' | 'user';
   isApproved: boolean;
   isActive: boolean;
+  theme?: 'light' | 'dark';
   createdAt: string;
 }
 
 export interface Ingredient {
   id: string;
   name: string;
+  spec: string;
   boxCost: number;
   boxQuantity: number;
   unitCost: number;
+  salesPrice: number;
   unit: Unit;
   isArchived?: boolean;
+  isSelectedForMenu?: boolean;
   createdAt?: string;
+}
+
+export interface IngredientChange {
+  id: string;
+  ingredientId: string;
+  name: string;
+  spec: string;
+  type: 'new' | 'deleted' | 'price_change';
+  prevPurchasePrice?: number;
+  currPurchasePrice?: number;
+  prevSalesPrice?: number;
+  currSalesPrice?: number;
+  timestamp: string;
 }
 
 export interface RecipeItem {
@@ -35,4 +52,6 @@ export interface Menu {
   notes?: string;
   isArchived?: boolean;
   createdAt?: string;
+  lastAcknowledgedCost?: number;
+  hasAlert?: boolean;
 }
