@@ -102,7 +102,12 @@ export const DatabaseView: React.FC<Props> = ({
             // 💡 [프랜차이즈 전용 특수 규칙]
             if (nameText.includes('백미새우')) {
               unit = '미';
-              boxQuantity = 20;
+              let trayCount = 1;
+              const trayMatch = searchText.match(/(\d+)(?:트레이|팩|개)/);
+              if (trayMatch) {
+                trayCount = parseInt(trayMatch[1], 10);
+              }
+              boxQuantity = 20 * trayCount;
             } else if (nameText.includes('국내산고등어') && nameText.includes('원물')) {
               unit = '미';
               boxQuantity = 28;
