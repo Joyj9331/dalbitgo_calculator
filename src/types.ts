@@ -1,5 +1,5 @@
 export type Region = '지방권' | '광역권' | '수도권';
-export type Unit = 'kg' | 'g' | 'ea' | '미';
+export type Unit = 'kg' | 'g' | 'ea' | '미' | '수';
 
 export interface User {
   uid: string;

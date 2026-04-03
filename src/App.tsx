@@ -95,7 +95,7 @@ export default function App() {
   const [menuCategories, setMenuCategories] = useState<MenuCategory[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [ingredientChanges, setIngredientChanges] = useState<IngredientChange[]>([]);
-  const [activeTab, setActiveTab] = useState<TabType>('지방권');
+  const [activeTab, setActiveTab] = useState<TabType>('수도권');
   
   const [isMenuModalOpen, setIsMenuModalOpen] = useState(false);
   const [editingMenu, setEditingMenu] = useState<Menu | undefined>(undefined);
@@ -818,7 +818,7 @@ export default function App() {
         row['원가'] = cost;
       }
       
-      (['지방권', '광역권', '수도권'] as Region[]).forEach(r => {
+      (['수도권', '광역권', '지방권'] as Region[]).forEach(r => {
         const price = m.prices[r] || 0;
         const margin = price - cost;
         const costRate = price > 0 ? cost / price : 0;

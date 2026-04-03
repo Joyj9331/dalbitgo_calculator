@@ -100,7 +100,10 @@ export const DatabaseView: React.FC<Props> = ({
             let boxQuantity = 1;
 
             // 💡 [프랜차이즈 전용 특수 규칙]
-            if (nameText.includes('백미새우')) {
+            if (nameText.includes('아이스홍시') || nameText.includes('아이스 홍시')) {
+              unit = '수';
+              boxQuantity = 144;
+            } else if (nameText.includes('백미새우')) {
               unit = '미';
               let trayCount = 1;
               const trayMatch = searchText.match(/(\d+)(?:트레이|팩|개)/);
