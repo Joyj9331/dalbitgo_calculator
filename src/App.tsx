@@ -818,7 +818,7 @@ export default function App() {
         row['원가'] = cost;
       }
       
-      (['수도권', '광역권', '지방권'] as Region[]).forEach(r => {
+      (['지방권', '광역권', '수도권'] as Region[]).forEach(r => {
         const price = m.prices[r] || 0;
         const margin = price - cost;
         const costRate = price > 0 ? cost / price : 0;

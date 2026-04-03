@@ -29,7 +29,7 @@ export const OverviewTable: React.FC<Props> = ({
   onNavigateToTab,
   onToggleColumn
 }) => {
-  const regions: Region[] = ['수도권', '광역권', '지방권'];
+  const regions: Region[] = ['지방권', '광역권', '수도권'];
 
   // Group menus by category
   const groupedMenus = menuCategories.map(category => ({
