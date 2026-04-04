@@ -8,20 +8,23 @@ export function cn(...inputs: ClassValue[]) {
 
 export const calculateTotalCost = (recipe: RecipeItem[], ingredients: Ingredient[], menus: Menu[] = [], visitedMenuIds: Set<string> = new Set()): number => {
   return recipe.reduce((total, item) => {
+    const yr = (item.yieldRate ?? 100) / 100;
+    const yieldMultiplier = yr > 0 ? 1 / yr : 1;
+
     if (item.type === 'menu' && item.menuId) {
-      if (visitedMenuIds.has(item.menuId)) return total; // Prevent infinite loops
+      if (visitedMenuIds.has(item.menuId)) return total;
       const subMenu = menus.find(m => m.id === item.menuId);
       if (subMenu) {
         const newVisited = new Set(visitedMenuIds);
         newVisited.add(item.menuId);
-        return total + calculateTotalCost(subMenu.recipe, ingredients, menus, newVisited) * item.quantity;
+        return total + calculateTotalCost(subMenu.recipe, ingredients, menus, newVisited) * item.quantity * yieldMultiplier;
       }
       return total;
     } else if (item.type === 'custom') {
-      return total + (item.customCost || 0) * item.quantity;
+      return total + (item.customCost || 0) * item.quantity * yieldMultiplier;
     } else {
       const ingredient = ingredients.find(i => i.id === item.ingredientId);
-      return total + (ingredient ? (ingredient.unitSalesPrice || 0) * item.quantity : 0);
+      return total + (ingredient ? (ingredient.unitSalesPrice || 0) * item.quantity * yieldMultiplier : 0);
     }
   }, 0);
 };
@@ -42,6 +45,7 @@ export const doesMenuContainIngredient = (recipe: RecipeItem[], ingredientId: st
     }
   });
 };
+
 export const hasMissingIngredients = (recipe: RecipeItem[], ingredients: Ingredient[], menus: Menu[] = [], visitedMenuIds: Set<string> = new Set()): boolean => {
   return recipe.some(item => {
     if (item.type === 'menu' && item.menuId) {
@@ -60,25 +64,19 @@ export const hasMissingIngredients = (recipe: RecipeItem[], ingredients: Ingredi
 };
 
 export const checkMenuAlert = (menu: any, ingredients: Ingredient[], menus: Menu[] = []) => {
-  // If explicitly marked as having an alert, always show it
   if (menu.hasAlert === true) return true;
   
   const currentCost = calculateTotalCost(menu.recipe, ingredients, menus);
   const missing = hasMissingIngredients(menu.recipe, ingredients, menus);
   
-  // If it's the first time (no lastAcknowledgedCost) and there's a problem, show alert
   if (menu.lastAcknowledgedCost === undefined) {
     return missing || menu.hasAlert;
   }
 
-  // Check if cost has changed since last acknowledgment
   const costChanged = Math.abs(currentCost - menu.lastAcknowledgedCost) > 0.1;
   
-  // If cost changed, it needs a new acknowledgment
   if (costChanged) return true;
 
-  // If cost is same as acknowledged, and hasAlert is false, then no alert
-  // even if 'missing' is true (user acknowledged the missing state)
   return false;
 };
 

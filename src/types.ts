@@ -52,6 +52,7 @@ export interface RecipeItem {
   customCost?: number;
   customUnit?: string;
   quantity: number;
+  yieldRate?: number;
 }
 
 export interface MenuCategory {

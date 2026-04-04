@@ -16,13 +16,12 @@ type TabType = 'ingredient' | 'menu' | 'custom';
 export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave, onClose }) => {
   const [recipe, setRecipe] = useState<RecipeItem[]>(menu.recipe);
   const [activeTab, setActiveTab] = useState<TabType>('ingredient');
-  
-  // Ingredient / Menu selection state
+
   const [selectedId, setSelectedId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
+  const [yieldRate, setYieldRate] = useState<number>(100);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  
-  // Custom item state
+
   const [customName, setCustomName] = useState('');
   const [customCost, setCustomCost] = useState<number>(0);
   const [customUnit, setCustomUnit] = useState('ea');
@@ -55,39 +54,40 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
   }, [isDropdownOpen, searchQuery]);
 
   const handleAdd = () => {
+    const clampedYield = Math.min(100, Math.max(1, yieldRate));
     if (activeTab === 'ingredient') {
       if (!selectedId || quantity <= 0) return;
       const existing = recipe.find(item => item.type !== 'menu' && item.type !== 'custom' && item.ingredientId === selectedId);
       if (existing) {
-        setRecipe(recipe.map(item => 
-          item.ingredientId === selectedId ? { ...item, quantity: item.quantity + quantity } : item
+        setRecipe(recipe.map(item =>
+          item.ingredientId === selectedId ? { ...item, quantity: item.quantity + quantity, yieldRate: clampedYield } : item
         ));
       } else {
-        setRecipe([...recipe, { type: 'ingredient', ingredientId: selectedId, quantity }]);
+        setRecipe([...recipe, { type: 'ingredient', ingredientId: selectedId, quantity, yieldRate: clampedYield }]);
       }
     } else if (activeTab === 'menu') {
       if (!selectedId || quantity <= 0) return;
-      // Prevent adding itself
       if (selectedId === menu.id) {
         alert('자기 자신을 메뉴에 추가할 수 없습니다.');
         return;
       }
       const existing = recipe.find(item => item.type === 'menu' && item.menuId === selectedId);
       if (existing) {
-        setRecipe(recipe.map(item => 
-          item.menuId === selectedId ? { ...item, quantity: item.quantity + quantity } : item
+        setRecipe(recipe.map(item =>
+          item.menuId === selectedId ? { ...item, quantity: item.quantity + quantity, yieldRate: clampedYield } : item
         ));
       } else {
-        setRecipe([...recipe, { type: 'menu', menuId: selectedId, quantity }]);
+        setRecipe([...recipe, { type: 'menu', menuId: selectedId, quantity, yieldRate: clampedYield }]);
       }
     } else if (activeTab === 'custom') {
       if (!customName.trim() || quantity <= 0) return;
-      setRecipe([...recipe, { 
-        type: 'custom', 
-        customName: customName.trim(), 
-        customCost, 
-        customUnit, 
-        quantity 
+      setRecipe([...recipe, {
+        type: 'custom',
+        customName: customName.trim(),
+        customCost,
+        customUnit,
+        quantity,
+        yieldRate: clampedYield
       }]);
       setCustomName('');
       setCustomCost(0);
@@ -96,6 +96,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
 
     setSelectedId('');
     setQuantity(1);
+    setYieldRate(100);
     setIsDropdownOpen(false);
     setSearchQuery('');
   };
@@ -112,7 +113,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
 
   const totalCost = calculateTotalCost(recipe, ingredients, menus);
 
-  const filteredItems = activeTab === 'ingredient' 
+  const filteredItems = activeTab === 'ingredient'
     ? ingredients.filter(ing => !ing.isArchived && ing.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : menus.filter(m => !m.isArchived && m.id !== menu.id && m.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -123,7 +124,6 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
       }
       return;
     }
-
     if (e.key === 'Enter') {
       e.preventDefault();
       if (focusedIndex >= 0 && focusedIndex < filteredItems.length) {
@@ -165,22 +165,22 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
             <X size={20} />
           </button>
         </div>
-        
+
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-slate-50 dark:bg-slate-800/30">
           <div className="flex gap-4 mb-4 border-b border-slate-200 dark:border-slate-700 pb-2">
-            <button 
+            <button
               onClick={() => { setActiveTab('ingredient'); setSelectedId(''); setSearchQuery(''); }}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${activeTab === 'ingredient' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800'}`}
             >
               <Package size={16} /> 식자재 추가
             </button>
-            <button 
+            <button
               onClick={() => { setActiveTab('menu'); setSelectedId(''); setSearchQuery(''); }}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${activeTab === 'menu' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800'}`}
             >
               <Utensils size={16} /> 기존 메뉴 추가
             </button>
-            <button 
+            <button
               onClick={() => { setActiveTab('custom'); }}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${activeTab === 'custom' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400' : 'text-slate-600 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800'}`}
             >
@@ -194,22 +194,18 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
                   {activeTab === 'ingredient' ? '재료 검색 및 선택' : '메뉴 검색 및 선택'}
                 </label>
-                
                 <div className="relative">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                     <input
                       type="text"
                       placeholder={
-                        activeTab === 'ingredient' 
+                        activeTab === 'ingredient'
                           ? (selectedIng ? selectedIng.name : "재료명을 검색하여 선택하세요...")
                           : (selectedMenu ? selectedMenu.name : "메뉴명을 검색하여 선택하세요...")
                       }
                       value={searchQuery}
-                      onChange={e => {
-                        setSearchQuery(e.target.value);
-                        setIsDropdownOpen(true);
-                      }}
+                      onChange={e => { setSearchQuery(e.target.value); setIsDropdownOpen(true); }}
                       onFocus={() => setIsDropdownOpen(true)}
                       onKeyDown={handleSearchKeyDown}
                       className="w-full pl-10 pr-10 py-2 text-sm border border-slate-300 dark:border-slate-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white transition-all"
@@ -220,8 +216,8 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                           선택됨
                         </span>
                       )}
-                      <ChevronDown 
-                        size={16} 
+                      <ChevronDown
+                        size={16}
                         className={`text-slate-400 transition-transform cursor-pointer ${isDropdownOpen ? 'rotate-180' : ''}`}
                         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                       />
@@ -241,16 +237,11 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                             const isSelected = selectedId === item.id;
                             const unitSalesPrice = activeTab === 'ingredient' ? (item as Ingredient).unitSalesPrice : calculateTotalCost((item as Menu).recipe, ingredients, menus);
                             const unit = activeTab === 'ingredient' ? (item as Ingredient).unit : 'ea';
-                            
                             return (
                               <button
                                 key={item.id}
                                 type="button"
-                                onClick={() => {
-                                  setSelectedId(item.id);
-                                  setIsDropdownOpen(false);
-                                  setSearchQuery('');
-                                }}
+                                onClick={() => { setSelectedId(item.id); setIsDropdownOpen(false); setSearchQuery(''); }}
                                 onMouseEnter={() => setFocusedIndex(index)}
                                 className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex justify-between items-center group
                                   ${focusedIndex === index ? 'bg-blue-50 dark:bg-blue-900/30' : ''}
@@ -265,9 +256,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                                     {activeTab === 'ingredient' && (item as Ingredient).isSelectedForMenu && (
                                       <span className="text-[8px] bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 px-1 rounded border border-blue-200 dark:border-blue-800">메뉴용</span>
                                     )}
-                                    {isSelected && (
-                                      <Check size={14} className="text-blue-600 dark:text-blue-400" />
-                                    )}
+                                    {isSelected && <Check size={14} className="text-blue-600 dark:text-blue-400" />}
                                   </div>
                                   <span className="text-[10px] text-slate-400 uppercase tracking-wider">단위: {unit}</span>
                                 </div>
@@ -284,21 +273,25 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                   )}
                 </div>
               </div>
-              
-              <div className="w-24">
+
+              <div className="w-20">
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">수량</label>
-                <input 
-                  type="number" 
-                  min="0.1" 
-                  step="0.1" 
-                  value={quantity} 
+                <input
+                  type="number" min="0.1" step="0.1" value={quantity}
                   onChange={e => setQuantity(parseFloat(e.target.value) || 0)}
                   className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                 />
               </div>
-              <button 
-                onClick={handleAdd}
-                disabled={!selectedId}
+              <div className="w-24">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">수율 (%)</label>
+                <input
+                  type="number" min="1" max="100" step="1" value={yieldRate}
+                  onChange={e => setYieldRate(parseFloat(e.target.value) || 100)}
+                  className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+              <button
+                onClick={handleAdd} disabled={!selectedId}
                 className="px-3 py-1.5 bg-slate-900 dark:bg-blue-600 text-white rounded-md hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1 text-sm h-[34px] transition-colors"
               >
                 <Plus size={16} /> 추가
@@ -308,47 +301,47 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
             <div className="flex gap-2 items-end">
               <div className="flex-1">
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">항목명</label>
-                <input 
-                  type="text" 
-                  value={customName}
+                <input
+                  type="text" value={customName}
                   onChange={e => setCustomName(e.target.value)}
                   placeholder="예: 포장용기, 인건비 등"
                   className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                 />
               </div>
-              <div className="w-24">
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">단가 (선택)</label>
-                <input 
-                  type="number" 
-                  min="0" 
-                  value={customCost}
+              <div className="w-20">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">단가</label>
+                <input
+                  type="number" min="0" value={customCost}
                   onChange={e => setCustomCost(parseFloat(e.target.value) || 0)}
                   className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                 />
               </div>
-              <div className="w-16">
+              <div className="w-14">
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">단위</label>
-                <input 
-                  type="text" 
-                  value={customUnit}
+                <input
+                  type="text" value={customUnit}
                   onChange={e => setCustomUnit(e.target.value)}
                   className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-2 py-1.5 text-sm text-center bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                 />
               </div>
-              <div className="w-20">
+              <div className="w-16">
                 <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">수량</label>
-                <input 
-                  type="number" 
-                  min="0.1" 
-                  step="0.1" 
-                  value={quantity} 
+                <input
+                  type="number" min="0.1" step="0.1" value={quantity}
                   onChange={e => setQuantity(parseFloat(e.target.value) || 0)}
                   className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-2 py-1.5 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                 />
               </div>
-              <button 
-                onClick={handleAdd}
-                disabled={!customName.trim()}
+              <div className="w-20">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">수율 (%)</label>
+                <input
+                  type="number" min="1" max="100" step="1" value={yieldRate}
+                  onChange={e => setYieldRate(parseFloat(e.target.value) || 100)}
+                  className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-2 py-1.5 text-sm text-right bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+              <button
+                onClick={handleAdd} disabled={!customName.trim()}
                 className="px-3 py-1.5 bg-slate-900 dark:bg-blue-600 text-white rounded-md hover:bg-slate-800 dark:hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1 text-sm h-[34px] transition-colors"
               >
                 <Plus size={16} /> 추가
@@ -367,6 +360,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                   <th className="pb-2">항목명</th>
                   <th className="pb-2 text-right">단가</th>
                   <th className="pb-2 text-right">수량</th>
+                  <th className="pb-2 text-right">수율</th>
                   <th className="pb-2 text-right">금액</th>
                   <th className="pb-2 text-center w-12"></th>
                 </tr>
@@ -408,7 +402,8 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                     }
                   }
 
-                  const cost = unitPrice * item.quantity;
+                  const yr = item.yieldRate ?? 100;
+                  const cost = yr > 0 ? (unitPrice * item.quantity) / (yr / 100) : unitPrice * item.quantity;
 
                   return (
                     <tr key={index} className={`hover:bg-blue-50/40 dark:hover:bg-blue-900/20 transition-colors group ${isMissing ? 'bg-rose-50/50 dark:bg-rose-900/10' : ''}`}>
@@ -416,13 +411,9 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                         <div className="flex items-center gap-2">
                           {name}
                           {isMissing ? (
-                            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/30 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                              누락됨
-                            </span>
+                            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-900/30 px-1.5 py-0.5 rounded uppercase tracking-wider">누락됨</span>
                           ) : (
-                            <span className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                              {itemTypeLabel}
-                            </span>
+                            <span className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">{itemTypeLabel}</span>
                           )}
                         </div>
                       </td>
@@ -434,11 +425,8 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                         )}
                       </td>
                       <td className="py-2 text-right">
-                        <input 
-                          type="number" 
-                          min="0.1" 
-                          step="0.1"
-                          value={item.quantity}
+                        <input
+                          type="number" min="0.1" step="0.1" value={item.quantity}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             setRecipe(recipe.map((r, i) => i === index ? { ...r, quantity: val } : r));
@@ -446,7 +434,25 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
                           className="w-16 border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-right text-sm inline-block bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                         />
                       </td>
-                      <td className="py-2 text-right font-medium text-slate-900 dark:text-slate-100">{formatCurrency(cost)}</td>
+                      <td className="py-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <input
+                            type="number" min="1" max="100" step="1" value={item.yieldRate ?? 100}
+                            onChange={(e) => {
+                              const val = Math.min(100, Math.max(1, parseFloat(e.target.value) || 100));
+                              setRecipe(recipe.map((r, i) => i === index ? { ...r, yieldRate: val } : r));
+                            }}
+                            className="w-14 border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-right text-sm inline-block bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                          />
+                          <span className="text-xs text-slate-400">%</span>
+                        </div>
+                      </td>
+                      <td className="py-2 text-right font-medium text-slate-900 dark:text-slate-100">
+                        {formatCurrency(cost)}
+                        {(item.yieldRate ?? 100) < 100 && (
+                          <div className="text-[10px] text-orange-500 dark:text-orange-400">수율 {item.yieldRate}%</div>
+                        )}
+                      </td>
                       <td className="py-2 text-center">
                         <button onClick={() => handleRemove(index)} className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors">
                           <Trash2 size={16} />
@@ -458,12 +464,11 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
               </tbody>
             </table>
           )}
-          
+
           <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">레시피 메모 / 캡션</label>
             <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
+              value={notes} onChange={e => setNotes(e.target.value)}
               className="w-full border border-slate-300 dark:border-slate-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white min-h-[100px]"
               placeholder="레시피에 대한 추가 설명이나 메모를 입력하세요..."
             />
