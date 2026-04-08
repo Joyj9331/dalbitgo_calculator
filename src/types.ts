@@ -115,3 +115,14 @@ export interface SalesRecord {
   deliveryAmount: number;
   createdAt: string;
 }
+
+export interface MarketingSchedule {
+  id: string;
+  brandId?: BrandId;
+  storeName: string;
+  naverText: string;
+  instaText: string;
+  daangnText: string;
+  status: '대기중' | '발행완료' | '반려';
+  createdAt: string;
+}

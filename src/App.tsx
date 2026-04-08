@@ -18,6 +18,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { ReviewDashboard } from './components/ReviewDashboard';
 import { AgentsDashboard } from './components/AgentsDashboard';
 import { StoreManagement } from './components/StoreManagement';
+import { MarketingDashboard } from './components/marketing';
 import { useToast } from './components/Toast';
 import { useConfirm } from './components/ConfirmModal';
 import {
@@ -42,7 +43,7 @@ enum OperationType {
 }
 
 type CostTabType = Region | '전체보기' | '메뉴 관리' | '변동사항';
-type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores';
+type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing';
 
 interface SidebarState {
   brandId: BrandId | null;
@@ -819,6 +820,7 @@ export default function App() {
     { id: 'sales' as SidebarSection, label: '매출 현황', icon: <BarChart2 size={14} /> },
     { id: 'review' as SidebarSection, label: '가맹점 관제', icon: <ShieldAlert size={14} /> },
     { id: 'stores' as SidebarSection, label: '가맹점 관리', icon: <Store size={14} /> },
+    { id: 'marketing' as SidebarSection, label: '마케팅 봇', icon: <Bot size={14} /> },
   ];
 
   const navigateAndCloseMobile = (brandId: BrandId | null, section: SidebarSection, costTab?: CostTabType) => {
@@ -1147,6 +1149,11 @@ export default function App() {
               {/* 가맹점 관리 */}
               {sidebar.section === 'stores' && sidebar.brandId && (
                 <StoreManagement brandId={sidebar.brandId} currentUser={currentUser} />
+              )}
+
+              {/* 마케팅 봇 */}
+              {sidebar.section === 'marketing' && sidebar.brandId && (
+                <MarketingDashboard activeBrand={sidebar.brandId} />
               )}
 
               {/* 매출 현황 */}
