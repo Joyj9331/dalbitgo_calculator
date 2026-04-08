@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MenuCategory } from '../types';
 import { X, Plus, Trash2, GripVertical, Eye, EyeOff } from 'lucide-react';
+import { useConfirm } from './ConfirmModal';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -86,6 +87,7 @@ interface Props {
 }
 
 export const CategoryManagementModal: React.FC<Props> = ({ categories, onSave, onClose }) => {
+  const { confirm } = useConfirm();
   const [items, setItems] = useState<MenuCategory[]>(categories);
   const [newName, setNewName] = useState('');
 
@@ -139,10 +141,10 @@ export const CategoryManagementModal: React.FC<Props> = ({ categories, onSave, o
     setItems(items.map(item => item.id === id ? { ...item, isVisible: !item.isVisible } : item));
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('이 카테고리를 삭제하시겠습니까? 카테고리에 속한 메뉴들은 "미분류"로 변경됩니다.')) {
-      setItems(items.filter(item => item.id !== id));
-    }
+  const handleDelete = async (id: string) => {
+    const ok = await confirm({ title: '카테고리 삭제', message: '이 카테고리를 삭제하시겠습니까? 해당 메뉴들은 "미분류"로 변경됩니다.', confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
+    setItems(items.filter(item => item.id !== id));
   };
 
   const handleSaveAll = () => {

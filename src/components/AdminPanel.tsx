@@ -4,6 +4,7 @@ import { collection, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/fire
 import { User, Ingredient } from '../types';
 import { Check, X, Trash2, ShieldAlert, Database, RefreshCw, AlertCircle } from 'lucide-react';
 import { writeBatch } from 'firebase/firestore';
+import { useConfirm } from './ConfirmModal';
 
 enum OperationType {
   CREATE = 'create',
@@ -39,6 +40,7 @@ interface Props {
 }
 
 export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients }) => {
+  const { confirm } = useConfirm();
   const [users, setUsers] = useState<User[]>([]);
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [recalcStatus, setRecalcStatus] = useState<string | null>(null);
@@ -73,17 +75,18 @@ export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients }) =
   };
 
   const handleDelete = async (uid: string) => {
-    if (window.confirm('정말 이 사용자를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
-      try {
-        await deleteDoc(doc(db, 'users', uid));
-      } catch (error) {
-        onFirestoreError(error, OperationType.DELETE, `users/${uid}`);
-      }
+    const ok = await confirm({ title: '사용자 삭제', message: '정말 이 사용자를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.', confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
+    try {
+      await deleteDoc(doc(db, 'users', uid));
+    } catch (error) {
+      onFirestoreError(error, OperationType.DELETE, `users/${uid}`);
     }
   };
 
   const handleRecalculateUnitSalesPrices = async () => {
-    if (!window.confirm('전체 식자재의 매출단가를 (매출가 / 수량)으로 재계산하여 업데이트하시겠습니까?')) return;
+    const ok = await confirm({ title: '매출단가 재계산', message: '전체 식자재의 매출단가를 (매출가 ÷ 수량)으로 재계산하여 업데이트하시겠습니까?', confirmLabel: '재계산', variant: 'warning' });
+    if (!ok) return;
 
     setIsRecalculating(true);
     setRecalcStatus('데이터 처리 중...');

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Menu, Ingredient, RecipeItem } from '../types';
 import { X, Plus, Trash2, Search, ChevronDown, Check, Utensils, Edit3, Package } from 'lucide-react';
 import { calculateTotalCost, formatCurrency } from '../utils';
+import { useToast } from './Toast';
 
 interface Props {
   menu: Menu;
@@ -14,6 +15,7 @@ interface Props {
 type TabType = 'ingredient' | 'menu' | 'custom';
 
 export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave, onClose }) => {
+  const toast = useToast();
   const [recipe, setRecipe] = useState<RecipeItem[]>(menu.recipe);
   const [activeTab, setActiveTab] = useState<TabType>('ingredient');
 
@@ -68,7 +70,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
     } else if (activeTab === 'menu') {
       if (!selectedId || quantity <= 0) return;
       if (selectedId === menu.id) {
-        alert('자기 자신을 메뉴에 추가할 수 없습니다.');
+        toast.error('자기 자신을 메뉴에 추가할 수 없습니다.');
         return;
       }
       const existing = recipe.find(item => item.type === 'menu' && item.menuId === selectedId);
@@ -107,7 +109,7 @@ export const RecipeModal: React.FC<Props> = ({ menu, ingredients, menus, onSave,
 
   const handleSave = () => {
     onSave(menu.id, recipe, notes);
-    alert('저장이 완료되었습니다.');
+    toast.success('레시피가 저장되었습니다.');
     onClose();
   };
 

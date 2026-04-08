@@ -5,6 +5,7 @@ import { formatCurrency } from '../utils';
 import Papa from 'papaparse';
 import { PriceHistoryGraph } from './PriceHistoryGraph';
 import { IngredientChangeView } from './IngredientChangeView';
+import { useToast } from './Toast';
 
 interface Props {
   ingredients: Ingredient[];
@@ -37,6 +38,7 @@ export const DatabaseView: React.FC<Props> = ({
   onThresholdValueChange,
   onSaveThreshold
 }) => {
+  const toast = useToast();
   const [ingredients, setIngredients] = useState<Ingredient[]>(initialIngredients);
 
   useEffect(() => {
@@ -77,16 +79,16 @@ export const DatabaseView: React.FC<Props> = ({
         let errorCount = 0;
 
         if (results.data.length === 0) {
-          alert('파일에 데이터가 없습니다.');
+          toast.error('파일에 데이터가 없습니다.');
           return;
         }
 
         // Check if required headers exist (at least '상품명' or '매입가')
         const firstRow = results.data[0] as any;
         const hasRequiredHeaders = ('상품명' in firstRow || 'Name' in firstRow) && ('매입가' in firstRow || 'Cost' in firstRow);
-        
+
         if (!hasRequiredHeaders) {
-          alert('CSV 파일 형식이 올바르지 않습니다.\n필수 항목: 상품명, 매입가\n(템플릿을 다운로드하여 형식을 확인해주세요.)');
+          toast.error('CSV 형식 오류: 필수 항목(상품명, 매입가)이 없습니다. 템플릿을 다운로드하여 형식을 확인해주세요.');
           return;
         }
 
@@ -202,17 +204,18 @@ export const DatabaseView: React.FC<Props> = ({
         if (newCount > 0 || updateCount > 0) {
           setIngredients(currentIngredients);
           onSave(currentIngredients);
-          alert(`성공적으로 데이터를 불러왔습니다.\n(신규: ${newCount}건, 업데이트: ${updateCount}건)${errorCount > 0 ? `\n(${errorCount}개의 행은 형식이 맞지 않아 제외되었습니다.)` : ''}`);
+          const errMsg = errorCount > 0 ? ` (${errorCount}행 제외)` : '';
+          toast.success(`CSV 업로드 완료: 신규 ${newCount}건, 업데이트 ${updateCount}건${errMsg}`);
         } else {
-          alert('불러올 수 있는 유효한 데이터가 없습니다. CSV 파일 형식을 확인해주세요.');
+          toast.error('유효한 데이터가 없습니다. CSV 파일 형식을 확인해주세요.');
         }
-        
+
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
       },
       error: (error) => {
-        alert(`CSV 파일 읽기 오류: ${error.message}`);
+        toast.error(`CSV 파일 읽기 오류: ${error.message}`);
       }
     });
   };

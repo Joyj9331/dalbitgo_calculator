@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Menu, MenuCategory, Ingredient, Region, RecipeItem, User, IngredientChange, BrandId, Brand, DEFAULT_BRANDS, SalesRecord } from './types';
 import { MenuTable } from './components/MenuTable';
 import { OverviewTable } from './components/OverviewTable';
@@ -16,12 +16,14 @@ import { DatabaseView } from './components/DatabaseView';
 import { Auth, ChangePasswordModal } from './components/Auth';
 import { AdminPanel } from './components/AdminPanel';
 import { ReviewDashboard } from './components/ReviewDashboard';
+import { useToast } from './components/Toast';
+import { useConfirm } from './components/ConfirmModal';
 import {
   Plus, Download, LogOut, KeyRound, Sun, Moon,
   Archive, AlertTriangle, Trash2, X, ChevronLeft, ChevronRight,
   ChevronDown, LayoutDashboard, Database, Settings,
   BarChart2, Edit2, Check, Store, TrendingUp, ShieldAlert,
-  ArrowRight, Bell
+  ArrowRight, Bell, Menu as MenuIcon, TriangleAlert
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { calculateTotalCost, formatPercent, doesMenuContainIngredient } from './utils';
@@ -55,10 +57,16 @@ const REVIEW_ENABLED_BRANDS = ['dalbitgo'];
 function HomePage({
   currentUser,
   brands,
+  menus,
+  ingredients,
+  ingredientChanges,
   onNavigate,
 }: {
   currentUser: User;
   brands: Brand[];
+  menus: Menu[];
+  ingredients: Ingredient[];
+  ingredientChanges: IngredientChange[];
   onNavigate: (brandId: BrandId | null, section: SidebarSection) => void;
 }) {
   const greeting = () => {
@@ -67,6 +75,53 @@ function HomePage({
     if (hour < 18) return '안녕하세요';
     return '수고하셨습니다';
   };
+
+  const totalMenus = menus.filter(m => !m.isArchived).length;
+  const totalIngredients = ingredients.filter(i => !i.isArchived).length;
+  const alertMenus = menus.filter(m => m.hasAlert && !m.isArchived).length;
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const recentChanges = ingredientChanges.filter(c => new Date(c.timestamp) >= sevenDaysAgo).length;
+
+  const kpiCards = [
+    {
+      label: '등록 메뉴',
+      value: totalMenus,
+      unit: '개',
+      icon: <LayoutDashboard size={16} />,
+      color: 'text-blue-600 dark:text-blue-400',
+      bg: 'bg-blue-50 dark:bg-blue-900/20',
+      onClick: () => onNavigate('dalbitgo', 'cost'),
+    },
+    {
+      label: '식재료',
+      value: totalIngredients,
+      unit: '종',
+      icon: <Database size={16} />,
+      color: 'text-emerald-600 dark:text-emerald-400',
+      bg: 'bg-emerald-50 dark:bg-emerald-900/20',
+      onClick: () => onNavigate(null, 'database'),
+    },
+    {
+      label: '원가 알림',
+      value: alertMenus,
+      unit: '건',
+      icon: <TriangleAlert size={16} />,
+      color: alertMenus > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400 dark:text-slate-500',
+      bg: alertMenus > 0 ? 'bg-rose-50 dark:bg-rose-900/20' : 'bg-slate-50 dark:bg-slate-800',
+      onClick: () => onNavigate('dalbitgo', 'cost'),
+      highlight: alertMenus > 0,
+    },
+    {
+      label: '최근 7일 변동',
+      value: recentChanges,
+      unit: '건',
+      icon: <TrendingUp size={16} />,
+      color: recentChanges > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500',
+      bg: recentChanges > 0 ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-slate-50 dark:bg-slate-800',
+      onClick: () => onNavigate(null, 'database'),
+    },
+  ];
 
   const quickMenus = [
     {
@@ -113,6 +168,32 @@ function HomePage({
           {greeting()}, <span className="text-slate-600 dark:text-slate-300">{currentUser.name}</span>님
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">새모양 F&B 가맹관리시스템에 오신 것을 환영합니다.</p>
+      </div>
+
+      {/* KPI 카드 */}
+      <div>
+        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">현황</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {kpiCards.map(card => (
+            <button
+              key={card.label}
+              onClick={card.onClick}
+              className={`flex flex-col items-start p-4 bg-white dark:bg-slate-900 rounded-xl border transition-all text-left shadow-sm hover:shadow-md ${
+                card.highlight
+                  ? 'border-rose-200 dark:border-rose-800'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+              }`}
+            >
+              <div className={`w-8 h-8 flex items-center justify-center rounded-lg mb-3 ${card.bg}`}>
+                <span className={card.color}>{card.icon}</span>
+              </div>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mb-0.5">{card.label}</p>
+              <p className={`text-xl font-bold ${card.color}`}>
+                {card.value}<span className="text-sm font-medium ml-0.5">{card.unit}</span>
+              </p>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 빠른 메뉴 */}
@@ -194,11 +275,16 @@ function HomePage({
 }
 
 export default function App() {
+  const toast = useToast();
+  const { confirm } = useConfirm();
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [brands, setBrands] = useState<Brand[]>(DEFAULT_BRANDS);
   const [expandedBrands, setExpandedBrands] = useState<Set<BrandId>>(new Set(['dalbitgo']));
@@ -247,6 +333,17 @@ export default function App() {
       setTimeout(() => setGlobalError(null), 5000);
     }
   };
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) setSidebarCollapsed(true);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -362,7 +459,7 @@ export default function App() {
         alertThresholdType: thresholdType, alertThresholdValue: thresholdValue
       });
       setCurrentUser({ ...currentUser, alertThresholdType: thresholdType, alertThresholdValue: thresholdValue });
-      alert('알림 설정이 저장되었습니다.');
+      toast.success('알림 설정이 저장되었습니다.');
     } catch (error) { console.error(error); }
   };
 
@@ -402,7 +499,8 @@ export default function App() {
   };
 
   const handleDeleteBrand = async (id: BrandId) => {
-    if (!window.confirm('이 브랜드를 삭제하시겠습니까?')) return;
+    const ok = await confirm({ title: '브랜드 삭제', message: '이 브랜드를 삭제하시겠습니까?', confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
     try {
       await deleteDoc(doc(db, 'brands', id));
       if (sidebar.brandId === id) {
@@ -452,10 +550,10 @@ export default function App() {
   };
 
   const handleArchiveMenu = async (id: string) => {
-    if (window.confirm('메뉴를 보관함으로 이동하시겠습니까?')) {
-      try { await updateDoc(doc(db, 'menus', id), { isArchived: true }); }
-      catch (error) { handleFirestoreError(error, OperationType.UPDATE, `menus/${id}`); }
-    }
+    const ok = await confirm({ title: '메뉴 보관', message: '메뉴를 보관함으로 이동하시겠습니까?', confirmLabel: '보관', variant: 'warning' });
+    if (!ok) return;
+    try { await updateDoc(doc(db, 'menus', id), { isArchived: true }); }
+    catch (error) { handleFirestoreError(error, OperationType.UPDATE, `menus/${id}`); }
   };
 
   const handleRestoreMenu = async (id: string) => {
@@ -480,7 +578,7 @@ export default function App() {
         await batch.commit();
       }
       setShowDeleteAllMenusConfirm(false);
-      alert('모든 메뉴가 삭제되었습니다.');
+      toast.success('모든 메뉴가 삭제되었습니다.');
     } catch (error) { handleFirestoreError(error, OperationType.DELETE, 'menus'); }
   };
 
@@ -493,7 +591,7 @@ export default function App() {
   };
 
   const handleAcknowledgeAlert = async (menuId: string) => {
-    if (currentUser?.role !== 'admin') { alert('관리자만 알림을 해결할 수 있습니다.'); return; }
+    if (currentUser?.role !== 'admin') { toast.error('관리자만 알림을 해결할 수 있습니다.'); return; }
     const menu = brandMenus.find(m => m.id === menuId);
     if (!menu) return;
     const currentCost = calculateTotalCost(menu.recipe, brandIngredients, brandMenus);
@@ -541,7 +639,8 @@ export default function App() {
   };
 
   const handleDeleteAllIngredients = async () => {
-    if (!window.confirm('모든 식자재와 변경 이력을 삭제하시겠습니까?')) return;
+    const ok = await confirm({ title: '전체 데이터 삭제', message: '모든 식자재와 변경 이력을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.', confirmLabel: '전체 삭제', variant: 'danger' });
+    if (!ok) return;
     try {
       const CHUNK_SIZE = 500;
       const allOps = [
@@ -557,12 +656,13 @@ export default function App() {
         });
         await batch.commit();
       }
-      alert('전체 데이터가 초기화되었습니다.');
+      toast.success('전체 데이터가 초기화되었습니다.');
     } catch (error) { handleFirestoreError(error, OperationType.DELETE, 'all_data'); }
   };
 
   const handleUnselectAllIngredients = async () => {
-    if (!window.confirm('메뉴용 식자재 선택을 모두 해제하시겠습니까?')) return;
+    const ok = await confirm({ title: '선택 전체 해제', message: '메뉴용 식자재 선택을 모두 해제하시겠습니까?', confirmLabel: '해제', variant: 'warning' });
+    if (!ok) return;
     try {
       const CHUNK_SIZE = 500;
       const allOps: any[] = [];
@@ -577,7 +677,7 @@ export default function App() {
         allOps.slice(i, i + CHUNK_SIZE).forEach(op => batch.update(op.ref, op.data));
         await batch.commit();
       }
-      alert('메뉴용 식자재 선택이 모두 해제되었습니다.');
+      toast.success('메뉴용 식자재 선택이 모두 해제되었습니다.');
     } catch (error) { handleFirestoreError(error, OperationType.UPDATE, 'ingredients'); }
   };
 
@@ -646,7 +746,8 @@ export default function App() {
   };
 
   const handleDeleteChange = async (id: string) => {
-    if (!window.confirm('이 변동 내역을 삭제하시겠습니까?')) return;
+    const ok = await confirm({ title: '변동 이력 삭제', message: '이 변동 내역을 삭제하시겠습니까?', confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
     try { await deleteDoc(doc(db, 'ingredient_changes', id)); }
     catch (error) { handleFirestoreError(error, OperationType.DELETE, `ingredient_changes/${id}`); }
   };
@@ -676,8 +777,9 @@ export default function App() {
   };
 
   if (!isAuthReady) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
-      로딩 중...
+    <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
+      <div className="w-8 h-8 border-2 border-slate-300 dark:border-slate-700 border-t-blue-500 rounded-full animate-spin" />
+      <p className="text-sm text-slate-400 dark:text-slate-500">로딩 중...</p>
     </div>
   );
 
@@ -716,30 +818,67 @@ export default function App() {
     { id: 'review' as SidebarSection, label: '가맹점 관제', icon: <ShieldAlert size={14} /> },
   ];
 
+  const navigateAndCloseMobile = (brandId: BrandId | null, section: SidebarSection, costTab?: CostTabType) => {
+    navigateTo(brandId, section, costTab);
+    if (isMobile) setMobileSidebarOpen(false);
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex text-slate-900 dark:text-slate-100">
       {renderGlobalError()}
 
+      {/* 모바일 사이드바 오버레이 배경 */}
+      {isMobile && mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* 모바일 햄버거 버튼 */}
+      {isMobile && !mobileSidebarOpen && (
+        <button
+          onClick={() => setMobileSidebarOpen(true)}
+          className="fixed top-3 left-3 z-40 p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-md text-slate-600 dark:text-slate-300"
+        >
+          <MenuIcon size={18} />
+        </button>
+      )}
+
       {/* 사이드바 */}
-      <aside className={`${sidebarCollapsed ? 'w-14' : 'w-60'} transition-all duration-300 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen sticky top-0 shrink-0`}>
+      <aside className={`${
+        isMobile
+          ? `fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-300 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
+          : `${sidebarCollapsed ? 'w-14' : 'w-60'} transition-all duration-300 sticky top-0 h-screen shrink-0`
+      } bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col`}>
 
         <div className="flex items-center justify-between px-3 py-3 border-b border-slate-200 dark:border-slate-800">
-          {!sidebarCollapsed && (
+          {(!sidebarCollapsed || isMobile) && (
             <button
-              onClick={() => setSidebar({ brandId: null, section: 'home', costTab: '수도권' })}
+              onClick={() => {
+                setSidebar({ brandId: null, section: 'home', costTab: '수도권' });
+                if (isMobile) setMobileSidebarOpen(false);
+              }}
               className="font-bold text-sm text-slate-900 dark:text-white tracking-tight hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
             >
               가맹관리시스템
             </button>
           )}
-          <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 ml-auto">
-            {sidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-          </button>
+          {!isMobile && (
+            <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 ml-auto">
+              {sidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+            </button>
+          )}
+          {isMobile && (
+            <button onClick={() => setMobileSidebarOpen(false)} className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 ml-auto">
+              <X size={15} />
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto py-2">
 
-          {!sidebarCollapsed && (
+          {(!sidebarCollapsed || isMobile) && (
             <div className="px-3 mb-1">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">브랜드</p>
             </div>
@@ -792,7 +931,7 @@ export default function App() {
                   )}
                 </div>
 
-                {isExpanded && !sidebarCollapsed && (
+                {isExpanded && (!sidebarCollapsed || isMobile) && (
                   <div className="ml-6 mr-2 mb-1">
                     {subMenus.map(item => {
                       // 가맹점 관제는 활성화된 브랜드만 정상, 나머지는 준비중 표시
@@ -803,10 +942,10 @@ export default function App() {
                       return (
                         <button
                           key={item.id}
-                          onClick={() => !isDisabled && navigateTo(brand.id, item.id)}
+                          onClick={() => !isDisabled && navigateAndCloseMobile(brand.id, item.id)}
                           className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${
                             isActive
-                              ? 'bg-slate-900 dark:bg-blue-600 text-white'
+                              ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-l-2 border-blue-500 pl-1.5'
                               : isDisabled
                               ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed'
                               : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
@@ -826,7 +965,7 @@ export default function App() {
             );
           })}
 
-          {!sidebarCollapsed && currentUser.role === 'admin' && (
+          {(!sidebarCollapsed || isMobile) && currentUser.role === 'admin' && (
             <div className="mx-2 mt-1">
               {showAddBrand ? (
                 <div className="flex gap-1 items-center">
@@ -855,7 +994,7 @@ export default function App() {
 
           <div className="my-3 mx-3 border-t border-slate-200 dark:border-slate-800" />
 
-          {!sidebarCollapsed && (
+          {(!sidebarCollapsed || isMobile) && (
             <div className="px-3 mb-1">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">공통</p>
             </div>
@@ -863,27 +1002,35 @@ export default function App() {
 
           <div className="mx-2 space-y-0.5">
             <button
-              onClick={() => setSidebar(prev => ({ ...prev, brandId: null, section: 'database' }))}
-              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${sidebar.section === 'database' && sidebar.brandId === null ? 'bg-slate-900 dark:bg-blue-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'}`}
+              onClick={() => navigateAndCloseMobile(null, 'database')}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${
+                sidebar.section === 'database' && sidebar.brandId === null
+                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-l-2 border-blue-500 pl-1.5'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+              }`}
             >
               <Database size={14} />
-              {!sidebarCollapsed && '식재료 데이터베이스'}
+              {(!sidebarCollapsed || isMobile) && '식재료 데이터베이스'}
             </button>
             {currentUser.role === 'admin' && (
               <button
-                onClick={() => setSidebar(prev => ({ ...prev, brandId: null, section: 'admin' }))}
-                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${sidebar.section === 'admin' ? 'bg-slate-900 dark:bg-blue-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'}`}
+                onClick={() => navigateAndCloseMobile(null, 'admin')}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${
+                  sidebar.section === 'admin'
+                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-l-2 border-blue-500 pl-1.5'
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+                }`}
               >
                 <Settings size={14} />
-                {!sidebarCollapsed && '관리자'}
+                {(!sidebarCollapsed || isMobile) && '관리자'}
               </button>
             )}
           </div>
         </div>
 
         <div className="px-3 py-3 border-t border-slate-200 dark:border-slate-800">
-          <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between'} gap-2`}>
-            {!sidebarCollapsed && (
+          <div className={`flex items-center ${(sidebarCollapsed && !isMobile) ? 'justify-center' : 'justify-between'} gap-2`}>
+            {(!sidebarCollapsed || isMobile) && (
               <div className="flex flex-col min-w-0">
                 <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{currentUser.name}</span>
                 <span className="text-[10px] text-slate-400">{currentUser.role === 'admin' ? '관리자' : '사용자'}</span>
@@ -906,13 +1053,16 @@ export default function App() {
 
       {/* 메인 콘텐츠 */}
       <main className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div className={`max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 ${isMobile ? 'pt-14' : ''}`}>
 
           {/* 홈 (랜딩) */}
           {sidebar.section === 'home' && (
             <HomePage
               currentUser={currentUser}
               brands={brands}
+              menus={menus}
+              ingredients={ingredients}
+              ingredientChanges={ingredientChanges}
               onNavigate={navigateTo}
             />
           )}
