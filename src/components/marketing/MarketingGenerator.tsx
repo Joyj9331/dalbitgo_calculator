@@ -138,7 +138,7 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash-lite',
+        model: 'gemini-2.5-flash',
         contents: [{ role: 'user', parts }],
       });
 
