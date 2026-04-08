@@ -16,6 +16,8 @@ import { DatabaseView } from './components/DatabaseView';
 import { Auth, ChangePasswordModal } from './components/Auth';
 import { AdminPanel } from './components/AdminPanel';
 import { ReviewDashboard } from './components/ReviewDashboard';
+import { AgentsDashboard } from './components/AgentsDashboard';
+import { StoreManagement } from './components/StoreManagement';
 import { useToast } from './components/Toast';
 import { useConfirm } from './components/ConfirmModal';
 import {
@@ -23,7 +25,7 @@ import {
   Archive, AlertTriangle, Trash2, X, ChevronLeft, ChevronRight,
   ChevronDown, LayoutDashboard, Database, Settings,
   BarChart2, Edit2, Check, Store, TrendingUp, ShieldAlert,
-  ArrowRight, Bell, Menu as MenuIcon, TriangleAlert
+  ArrowRight, Bell, Menu as MenuIcon, TriangleAlert, Bot,
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { calculateTotalCost, formatPercent, doesMenuContainIngredient } from './utils';
@@ -40,7 +42,7 @@ enum OperationType {
 }
 
 type CostTabType = Region | '전체보기' | '메뉴 관리' | '변동사항';
-type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home';
+type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores';
 
 interface SidebarState {
   brandId: BrandId | null;
@@ -816,6 +818,7 @@ export default function App() {
     { id: 'cost' as SidebarSection, label: '원가 계산기', icon: <LayoutDashboard size={14} /> },
     { id: 'sales' as SidebarSection, label: '매출 현황', icon: <BarChart2 size={14} /> },
     { id: 'review' as SidebarSection, label: '가맹점 관제', icon: <ShieldAlert size={14} /> },
+    { id: 'stores' as SidebarSection, label: '가맹점 관리', icon: <Store size={14} /> },
   ];
 
   const navigateAndCloseMobile = (brandId: BrandId | null, section: SidebarSection, costTab?: CostTabType) => {
@@ -1012,6 +1015,17 @@ export default function App() {
               <Database size={14} />
               {(!sidebarCollapsed || isMobile) && '식재료 데이터베이스'}
             </button>
+            <button
+              onClick={() => navigateAndCloseMobile(null, 'agents')}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors ${
+                sidebar.section === 'agents'
+                  ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-l-2 border-blue-500 pl-1.5'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Bot size={15} />
+              {(!sidebarCollapsed || isMobile) && '에이전트 팀'}
+            </button>
             {currentUser.role === 'admin' && (
               <button
                 onClick={() => navigateAndCloseMobile(null, 'admin')}
@@ -1105,6 +1119,9 @@ export default function App() {
             </>
           )}
 
+          {/* 에이전트 팀 */}
+          {sidebar.section === 'agents' && <AgentsDashboard />}
+
           {/* 브랜드별 콘텐츠 */}
           {sidebar.brandId !== null && currentBrand && (
             <>
@@ -1125,6 +1142,11 @@ export default function App() {
                     </div>
                   )}
                 </>
+              )}
+
+              {/* 가맹점 관리 */}
+              {sidebar.section === 'stores' && sidebar.brandId && (
+                <StoreManagement brandId={sidebar.brandId} currentUser={currentUser} />
               )}
 
               {/* 매출 현황 */}
