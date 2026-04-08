@@ -155,9 +155,9 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
 
       setGeneratedResults({ n_text, i_text, d_text });
       toast.success('마케팅 원고 생성이 완료되었습니다.');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error('원고 생성 중 오류가 발생했습니다.');
+      toast.error(`원고 생성 오류: ${err?.message || '알 수 없는 오류'}`);
     } finally {
       setLoading(false);
     }
