@@ -76,23 +76,30 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
       if (s.showInCalendar === false) return;
       const teamBg = getTeamColor(s.team);
 
-      if (isDateInRange(dateStr, s.constructionStart, s.constructionEnd)) {
-        events.push({ scheduleId: s.id, phaseId: 'construction', text: `🚧 ${s.storeName}-공사`, color: teamBg });
+      // 공사 일정은 시작일, 마감일만 단일 블록으로 표시
+      if (dateStr === s.constructionStart) {
+        events.push({ scheduleId: s.id, phaseId: 'constructionStart', text: `🚧 ${s.storeName}-착공`, color: teamBg, isStart: true, isEnd: true });
       }
-      if (isDateInRange(dateStr, s.ovenIn, s.ovenEnd)) {
-        events.push({ scheduleId: s.id, phaseId: 'oven', text: `🔥 ${s.storeName}-화덕`, color: teamBg });
+      if (dateStr === s.constructionEnd) {
+        events.push({ scheduleId: s.id, phaseId: 'constructionEnd', text: `✅ ${s.storeName}-공사마감`, color: teamBg, isStart: true, isEnd: true });
       }
-      if (isDateInRange(dateStr, s.initialStockIn, s.initialStockEnd)) {
-        events.push({ scheduleId: s.id, phaseId: 'initialStock', text: `📦 ${s.storeName}-초도`, color: teamBg });
-      }
-      if (isDateInRange(dateStr, s.preTrainingStart, s.preTrainingEnd)) {
-         events.push({ scheduleId: s.id, phaseId: 'preTraining', text: `📝 ${s.storeName}-사전`, color: teamBg });
-      }
-      if (isDateInRange(dateStr, s.trainingStart, s.trainingEnd)) {
-         events.push({ scheduleId: s.id, phaseId: 'training', text: `👨‍🏫 ${s.storeName}-본교육`, color: teamBg });
-      }
+
+      const checkRange = (phaseId: string, textPrefix: string, start: string, end: string) => {
+        if (isDateInRange(dateStr, start, end)) {
+          events.push({
+            scheduleId: s.id, phaseId, text: `${textPrefix} ${s.storeName}`, color: teamBg,
+            isStart: dateStr === start, isEnd: dateStr === end
+          });
+        }
+      };
+
+      checkRange('oven', '🔥', s.ovenIn, s.ovenEnd);
+      checkRange('initialStock', '📦', s.initialStockIn, s.initialStockEnd);
+      checkRange('preTraining', '📝', s.preTrainingStart, s.preTrainingEnd);
+      checkRange('training', '👨‍🏫', s.trainingStart, s.trainingEnd);
+
       if (s.openDate === dateStr) {
-         events.push({ scheduleId: s.id, phaseId: 'open', text: `🎉 ${s.storeName}-오픈!`, color: teamBg });
+         events.push({ scheduleId: s.id, phaseId: 'open', text: `🎉 ${s.storeName}-오픈!`, color: teamBg, isStart: true, isEnd: true });
       }
     });
 
@@ -127,8 +134,9 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
 
     let updates: Partial<FranchiseSchedule> = {};
 
-    if (phaseId === 'construction') {
+    if (phaseId === 'constructionStart') {
       updates.constructionStart = addDays(schedule.constructionStart, diffDays);
+    } else if (phaseId === 'constructionEnd') {
       updates.constructionEnd = addDays(schedule.constructionEnd, diffDays);
     } else if (phaseId === 'oven') {
       updates.ovenIn = addDays(schedule.ovenIn, diffDays);
@@ -167,23 +175,30 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
           return (
             <div 
               key={idx} 
-              className={`min-h-[120px] p-2 border-b border-r border-slate-100 dark:border-slate-800 flex flex-col ${!cell.isCurrentMonth ? 'bg-slate-50 dark:bg-slate-800/20 opacity-50' : ''}`}
+              className={`min-h-[120px] py-1.5 border-b border-r border-slate-100 dark:border-slate-800 flex flex-col ${!cell.isCurrentMonth ? 'bg-slate-50 dark:bg-slate-800/20 opacity-50' : ''}`}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleDrop(e, cell.fullDate)}
             >
-              <div className={`text-right text-sm font-bold mb-1.5 ${cell.isCurrentMonth ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'}`}>{cell.day}</div>
+              <div className={`text-right px-2 text-sm font-bold mb-1.5 ${cell.isCurrentMonth ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'}`}>{cell.day}</div>
               <div className="flex-1 space-y-1 overflow-y-auto min-h-[60px] pb-2">
-                {events.map((ev, i) => (
-                  <div 
-                    key={i} 
-                    className={`text-[11px] px-1.5 py-1 rounded font-bold truncate text-white cursor-move hover:opacity-90 shadow-sm ${ev.color}`} 
-                    title={ev.text}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, ev.scheduleId, ev.phaseId, cell.fullDate)}
-                  >
-                    {ev.text}
-                  </div>
-                ))}
+                {events.map((ev, i) => {
+                  const roundedCls = ev.isStart && ev.isEnd ? 'rounded' : ev.isStart ? 'rounded-l rounded-r-none' : ev.isEnd ? 'rounded-r rounded-l-none' : 'rounded-none';
+                  const ml = ev.isStart ? 'ml-1' : 'ml-0';
+                  const mr = ev.isEnd ? 'mr-1' : 'mr-0';
+                  const pl = ev.isStart ? 'pl-2' : 'pl-1';
+
+                  return (
+                    <div 
+                      key={i} 
+                      className={`text-[11px] py-1 font-bold truncate text-white cursor-move hover:opacity-90 shadow-sm ${ev.color} ${roundedCls} ${ml} ${mr} ${pl}`} 
+                      title={ev.text}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, ev.scheduleId, ev.phaseId, cell.fullDate)}
+                    >
+                      {ev.text}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
