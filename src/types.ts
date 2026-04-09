@@ -116,6 +116,24 @@ export interface SalesRecord {
   createdAt: string;
 }
 
+export interface MonthlySalesRecord {
+  id: string;
+  yearMonth: string; // 'YYYY-MM'
+  city: string;      // '도시'
+  district: string;  // '시군'
+  storeName: string; // '매장_요약'
+  totalSales: number;// '총매출'
+  createdAt: string;
+}
+
+export interface DailySalesRecord {
+  id: string;
+  date: string;       // 'YYYY-MM-DD'
+  storeName: string;  // '매장_요약'
+  totalSales: number; // '총매출'
+  createdAt: string;
+}
+
 export interface MarketingSchedule {
   id: string;
   brandId?: BrandId;

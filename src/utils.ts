@@ -88,3 +88,27 @@ export const formatPercent = (rate: number) => {
   if (isNaN(rate) || !isFinite(rate)) return '0.0%';
   return `${(rate * 100).toFixed(1)}%`;
 };
+
+export const formatShortMoney = (val: number | string | undefined | null): string => {
+  if (val === undefined || val === null || val === '') return '0원';
+  let numVal = typeof val === 'string' ? parseFloat(val.replace(/,/g, '')) : val;
+  if (isNaN(numVal) || numVal === 0) return '0원';
+
+  const isNegative = numVal < 0;
+  numVal = Math.abs(numVal);
+  
+  const uk = Math.floor(numVal / 100000000);
+  const man = Math.floor((numVal % 100000000) / 10000);
+  
+  let res = '';
+  if (uk > 0) res += `${uk}억`;
+  if (man > 0) {
+    if (man % 1000 === 0) res += ` ${Math.floor(man / 1000)}천만`;
+    else res += ` ${man}만`;
+  }
+  
+  res = res.trim();
+  if (!res) res = `${Math.floor(numVal).toLocaleString('ko-KR')}`;
+  
+  return isNegative ? `-${res}원` : `${res}원`;
+};

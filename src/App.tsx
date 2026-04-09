@@ -19,6 +19,7 @@ import { ReviewDashboard } from './components/ReviewDashboard';
 import { AgentsDashboard } from './components/AgentsDashboard';
 import { StoreManagement } from './components/StoreManagement';
 import { MarketingDashboard } from './components/marketing';
+import { SalesDashboard } from './components/sales/SalesDashboard';
 import { useToast } from './components/Toast';
 import { useConfirm } from './components/ConfirmModal';
 import {
@@ -1157,18 +1158,8 @@ export default function App() {
               )}
 
               {/* 매출 현황 */}
-              {sidebar.section === 'sales' && (
-                <>
-                  <div className="mb-6">
-                    <h1 className="text-xl font-bold text-slate-900 dark:text-white">{currentBrand.name}</h1>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">매출 현황</p>
-                  </div>
-                  <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-12 text-center">
-                    <BarChart2 size={40} className="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-                    <h2 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-2">매출 현황</h2>
-                    <p className="text-sm text-slate-400">곧 오픈 예정입니다.</p>
-                  </div>
-                </>
+              {sidebar.section === 'sales' && sidebar.brandId && (
+                <SalesDashboard activeBrand={sidebar.brandId} />
               )}
 
               {/* 원가 계산기 */}
