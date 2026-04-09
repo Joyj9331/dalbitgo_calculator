@@ -31,6 +31,7 @@ export function FranchiseScheduleView({ brandId }: Props) {
   const [search, setSearch] = useState('');
   const [filterTeam, setFilterTeam] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>(''); // empty means all
+  const [monthsView, setMonthsView] = useState<1 | 2>(1);
   
   // Date states for views
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -200,6 +201,13 @@ export function FranchiseScheduleView({ brandId }: Props) {
               ><CalendarIcon size={14}/> 월간달력</button>
             </div>
             
+            {viewMode === 'calendar' && (
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg ml-2">
+                <button onClick={() => setMonthsView(1)} className={`px-2 py-1 text-xs font-bold rounded transition-colors ${monthsView === 1 ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500'}`}>1개월</button>
+                <button onClick={() => setMonthsView(2)} className={`px-2 py-1 text-xs font-bold rounded transition-colors ${monthsView === 2 ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500'}`}>2개월</button>
+              </div>
+            )}
+            
             {/* 월 이동 컨트롤 — 타임라인과 달력 모두에서 항상 표시 (currentMonth 공유) */}
             <div className="flex items-center gap-1 font-bold text-slate-700 dark:text-slate-300 ml-4">
                <button
@@ -257,27 +265,47 @@ export function FranchiseScheduleView({ brandId }: Props) {
                 />
               </div>
             ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+              <div className={`grid grid-cols-1 ${monthsView === 2 ? 'xl:grid-cols-2' : ''} gap-6 items-start`}>
                 {/* 1번 달력 (기준 달) */}
                 <div>
-                  <h3 className="text-center font-bold text-slate-800 dark:text-slate-200 mb-3 text-sm">
+                  <h3 className="text-center font-bold text-slate-800 dark:text-slate-200 mb-3 text-sm flex items-center justify-center gap-2">
                     {currentMonth.getFullYear()}년 {currentMonth.getMonth() + 1}월
                   </h3>
                   <ScheduleCalendar 
                      schedules={filteredSchedules}
                      currentMonth={currentMonth}
+                     teams={teams}
+                     onScheduleUpdate={async (id, data) => {
+                       try {
+                         await updateDoc(doc(db, 'franchise_schedules', id), data);
+                         fetchData(); // 리프레시
+                       } catch(e) {
+                         console.error(e);
+                       }
+                     }}
                   />
                 </div>
                 {/* 2번 달력 (다음 달) */}
-                <div>
-                  <h3 className="text-center font-bold text-slate-800 dark:text-slate-200 mb-3 text-sm">
-                    {new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1).getFullYear()}년 {new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1).getMonth() + 1}월
-                  </h3>
-                  <ScheduleCalendar 
-                     schedules={filteredSchedules}
-                     currentMonth={new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)}
-                  />
-                </div>
+                {monthsView === 2 && (
+                  <div>
+                    <h3 className="text-center font-bold text-slate-800 dark:text-slate-200 mb-3 text-sm">
+                      {new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1).getFullYear()}년 {new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1).getMonth() + 1}월
+                    </h3>
+                    <ScheduleCalendar 
+                       schedules={filteredSchedules}
+                       currentMonth={new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)}
+                       teams={teams}
+                       onScheduleUpdate={async (id, data) => {
+                         try {
+                           await updateDoc(doc(db, 'franchise_schedules', id), data);
+                           fetchData(); // 리프레시
+                         } catch(e) {
+                           console.error(e);
+                         }
+                       }}
+                    />
+                  </div>
+                )}
               </div>
             )}
             

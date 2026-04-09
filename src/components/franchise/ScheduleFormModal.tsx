@@ -58,7 +58,7 @@ export function ScheduleFormModal({ initial, teams, onSave, onClose }: Props) {
       initialStockIn: addDays(start, TEMPLATE_DAYS.preTrainingDelay - 2),
       initialStockEnd: addDays(start, TEMPLATE_DAYS.preTrainingDelay - 1),
       preTrainingStart: addDays(start, TEMPLATE_DAYS.preTrainingDelay),
-      preTrainingEnd: addDays(start, TEMPLATE_DAYS.preTrainingDelay + 1),
+      preTrainingEnd: addDays(start, TEMPLATE_DAYS.preTrainingDelay + 4),
       trainingStart: addDays(start, TEMPLATE_DAYS.trainingDelay),
       trainingEnd: addDays(start, TEMPLATE_DAYS.trainingDelay + 4),
       openDate: addDays(start, TEMPLATE_DAYS.openDelay),
@@ -151,7 +151,7 @@ export function ScheduleFormModal({ initial, teams, onSave, onClose }: Props) {
               <h4 className="text-xs font-bold text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-1 uppercase">공사 관련</h4>
               <div><label className={labelCls}>공사 시작일</label><input type="date" className={inputCls} value={form.constructionStart || ''} onChange={e => set('constructionStart', e.target.value)} /></div>
               <div><label className={labelCls}>공사 종료일</label><input type="date" className={inputCls} value={form.constructionEnd || ''} onChange={e => set('constructionEnd', e.target.value)} /></div>
-              <div><label className={labelCls}>오븐 입고</label><input type="date" className={inputCls} value={form.ovenIn || ''} onChange={e => set('ovenIn', e.target.value)} /></div>
+              <div><label className={labelCls}>화덕 입고</label><input type="date" className={inputCls} value={form.ovenIn || ''} onChange={e => set('ovenIn', e.target.value)} /></div>
             </div>
 
             {/* 교육 일정 */}

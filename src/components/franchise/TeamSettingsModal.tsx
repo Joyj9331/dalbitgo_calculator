@@ -21,11 +21,24 @@ export function TeamSettingsModal({ brandId, onClose }: Props) {
   // New Team states
   const [showAddTeam, setShowAddTeam] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
+  const [newTeamColor, setNewTeamColor] = useState('blue');
 
   // Editing states
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [editTeamName, setEditTeamName] = useState('');
+  const [editTeamColor, setEditTeamColor] = useState('blue');
   const [newMemberName, setNewMemberName] = useState('');
+
+  const PRESET_COLORS = [
+    { id: 'blue', bgClass: 'bg-blue-500' },
+    { id: 'rose', bgClass: 'bg-rose-500' },
+    { id: 'emerald', bgClass: 'bg-emerald-500' },
+    { id: 'amber', bgClass: 'bg-amber-500' },
+    { id: 'purple', bgClass: 'bg-purple-500' },
+    { id: 'cyan', bgClass: 'bg-cyan-500' },
+    { id: 'pink', bgClass: 'bg-pink-500' },
+    { id: 'slate', bgClass: 'bg-slate-500' },
+  ];
 
   const fetchTeams = async () => {
     setLoading(true);
@@ -56,6 +69,7 @@ export function TeamSettingsModal({ brandId, onClose }: Props) {
         id,
         brandId,
         name: newTeamName.trim(),
+        color: newTeamColor,
         members: []
       };
       await setDoc(doc(db, 'team_settings', id), newTeam);
@@ -71,7 +85,10 @@ export function TeamSettingsModal({ brandId, onClose }: Props) {
   const handleUpdateTeamName = async () => {
     if (!editingTeamId || !editTeamName.trim()) return;
     try {
-      await updateDoc(doc(db, 'team_settings', editingTeamId), { name: editTeamName.trim() });
+      await updateDoc(doc(db, 'team_settings', editingTeamId), { 
+        name: editTeamName.trim(),
+        color: editTeamColor
+      });
       setEditingTeamId(null);
       fetchTeams();
     } catch (err) {
@@ -141,41 +158,72 @@ export function TeamSettingsModal({ brandId, onClose }: Props) {
                </div>
 
                {showAddTeam && (
-                 <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg">
-                   <input 
-                     value={newTeamName}
-                     onChange={e => setNewTeamName(e.target.value)}
-                     placeholder="예: 1팀 (호남권)"
-                     className="flex-1 px-3 py-1.5 text-sm rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none"
-                     autoFocus
-                   />
-                   <button onClick={handleAddTeam} className="px-3 py-1.5 text-sm bg-slate-900 text-white dark:bg-blue-600 rounded">추가</button>
-                   <button onClick={() => setShowAddTeam(false)} className="px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700">취소</button>
+                 <div className="flex flex-col gap-2 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                   <div className="flex items-center gap-2">
+                     <input 
+                       value={newTeamName}
+                       onChange={e => setNewTeamName(e.target.value)}
+                       placeholder="예: 1팀 (호남권)"
+                       className="flex-1 px-3 py-1.5 text-sm rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-none"
+                       autoFocus
+                     />
+                     <button onClick={handleAddTeam} className="px-3 py-1.5 text-sm bg-slate-900 text-white dark:bg-blue-600 rounded">추가</button>
+                     <button onClick={() => setShowAddTeam(false)} className="px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700">취소</button>
+                   </div>
+                   <div className="flex items-center gap-2 mt-1">
+                     <span className="text-xs font-semibold text-slate-500">팀 컬러:</span>
+                     <div className="flex gap-1.5">
+                       {PRESET_COLORS.map(c => (
+                         <button 
+                           key={c.id} 
+                           onClick={() => setNewTeamColor(c.id)}
+                           className={`w-5 h-5 rounded-full ${c.bgClass} ${newTeamColor === c.id ? 'ring-2 ring-offset-1 ring-slate-800 dark:ring-offset-slate-900' : ''}`}
+                         />
+                       ))}
+                     </div>
+                   </div>
                  </div>
                )}
 
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  {teams.map(team => (
                    <div key={team.id} className="border border-slate-200 dark:border-slate-800 rounded-xl p-4 bg-white dark:bg-slate-900">
-                     <div className="flex items-center justify-between mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
+                     <div className="flex flex-col mb-3 border-b border-slate-100 dark:border-slate-800 pb-2">
                        {editingTeamId === team.id ? (
-                         <div className="flex items-center gap-2 flex-1">
-                           <input 
-                              value={editTeamName}
-                              onChange={e => setEditTeamName(e.target.value)}
-                              className="px-2 py-1 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded flex-1"
-                           />
-                           <button onClick={handleUpdateTeamName} className="text-xs px-2 py-1 bg-blue-600 text-white rounded">저장</button>
-                           <button onClick={() => setEditingTeamId(null)} className="text-xs px-2 py-1 bg-slate-200 text-slate-700 rounded">취소</button>
+                         <div className="flex flex-col gap-2">
+                           <div className="flex items-center gap-2">
+                             <input 
+                                value={editTeamName}
+                                onChange={e => setEditTeamName(e.target.value)}
+                                className="px-2 py-1 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded flex-1"
+                             />
+                             <button onClick={handleUpdateTeamName} className="text-xs px-2 py-1 bg-blue-600 text-white rounded">저장</button>
+                             <button onClick={() => setEditingTeamId(null)} className="text-xs px-2 py-1 bg-slate-200 text-slate-700 rounded">취소</button>
+                           </div>
+                           <div className="flex items-center gap-2">
+                             <span className="text-xs font-semibold text-slate-500">팀 컬러:</span>
+                             <div className="flex gap-1.5">
+                               {PRESET_COLORS.map(c => (
+                                 <button 
+                                   key={c.id} 
+                                   onClick={() => setEditTeamColor(c.id)}
+                                   className={`w-4 h-4 rounded-full ${c.bgClass} ${editTeamColor === c.id ? 'ring-2 ring-offset-1 ring-slate-800 dark:ring-offset-slate-900' : ''}`}
+                                 />
+                               ))}
+                             </div>
+                           </div>
                          </div>
                        ) : (
-                         <>
-                           <h3 className="font-bold text-slate-800 dark:text-slate-200">{team.name}</h3>
+                         <div className="flex items-center justify-between">
+                           <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                             <span className={`w-3 h-3 rounded-full ${PRESET_COLORS.find(c => c.id === (team.color || 'slate'))?.bgClass}`}></span>
+                             {team.name}
+                           </h3>
                            <div className="flex items-center gap-1">
-                             <button onClick={() => { setEditingTeamId(team.id); setEditTeamName(team.name); }} className="p-1 text-slate-400 hover:text-blue-500"><Edit2 size={13}/></button>
+                             <button onClick={() => { setEditingTeamId(team.id); setEditTeamName(team.name); setEditTeamColor(team.color || 'slate'); }} className="p-1 text-slate-400 hover:text-blue-500"><Edit2 size={13}/></button>
                              <button onClick={() => handleDeleteTeam(team.id, team.name)} className="p-1 text-slate-400 hover:text-rose-500"><Trash2 size={13}/></button>
                            </div>
-                         </>
+                         </div>
                        )}
                      </div>
                      

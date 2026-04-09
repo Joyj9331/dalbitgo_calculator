@@ -197,6 +197,7 @@ export interface TeamSetting {
   brandId: BrandId;
   name: string;    // 팀 명 (예: 1팀)
   members: TeamMember[]; // 소속 SV들
+  color?: string;  // 팀별 고유 색상 (Tailwind bg class 등)
   createdAt?: string;
 }
 
