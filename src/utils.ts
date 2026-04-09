@@ -112,3 +112,33 @@ export const formatShortMoney = (val: number | string | undefined | null): strin
   
   return isNegative ? `-${res}원` : `${res}원`;
 };
+
+// ==========================================
+// 날짜 유틸리티 (Franchise Schedule 등)
+// ==========================================
+
+export const addDays = (dateStr: string, days: number): string => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split('T')[0];
+};
+
+export const diffDays = (startStr: string, endStr: string): number => {
+  if (!startStr || !endStr) return 0;
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+  // 시간 차이를 일(day) 단위로 변환
+  const diffTime = end.getTime() - start.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
+
+export const isDateInRange = (targetStr: string, startStr: string, endStr: string): boolean => {
+  if (!targetStr || !startStr || !endStr) return false;
+  const target = new Date(targetStr).getTime();
+  const start = new Date(startStr).getTime();
+  const end = new Date(endStr).getTime();
+  return target >= start && target <= end;
+};

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,6 +20,7 @@ import { AgentsDashboard } from './components/AgentsDashboard';
 import { StoreManagement } from './components/StoreManagement';
 import { MarketingDashboard } from './components/marketing';
 import { SalesDashboard } from './components/sales/SalesDashboard';
+import { FranchiseScheduleView } from './components/franchise';
 import { useToast } from './components/Toast';
 import { useConfirm } from './components/ConfirmModal';
 import {
@@ -27,7 +28,7 @@ import {
   Archive, AlertTriangle, Trash2, X, ChevronLeft, ChevronRight,
   ChevronDown, LayoutDashboard, Database, Settings,
   BarChart2, Edit2, Check, Store, TrendingUp, ShieldAlert,
-  ArrowRight, Bell, Menu as MenuIcon, TriangleAlert, Bot,
+  ArrowRight, Bell, Menu as MenuIcon, TriangleAlert, Bot, CalendarDays
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { calculateTotalCost, formatPercent, doesMenuContainIngredient } from './utils';
@@ -44,7 +45,7 @@ enum OperationType {
 }
 
 type CostTabType = Region | '전체보기' | '메뉴 관리' | '변동사항';
-type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing';
+type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing' | 'franchise';
 
 interface SidebarState {
   brandId: BrandId | null;
@@ -820,7 +821,7 @@ export default function App() {
     { id: 'cost' as SidebarSection, label: '원가 계산기', icon: <LayoutDashboard size={14} /> },
     { id: 'sales' as SidebarSection, label: '매출 현황', icon: <BarChart2 size={14} /> },
     { id: 'review' as SidebarSection, label: '가맹점 관제', icon: <ShieldAlert size={14} /> },
-    { id: 'stores' as SidebarSection, label: '가맹점 관리', icon: <Store size={14} /> },
+    { id: 'franchise' as SidebarSection, label: '오픈 일정', icon: <CalendarDays size={14} /> },
     { id: 'marketing' as SidebarSection, label: '마케팅 봇', icon: <Bot size={14} /> },
   ];
 
@@ -1147,9 +1148,9 @@ export default function App() {
                 </>
               )}
 
-              {/* 가맹점 관리 */}
-              {sidebar.section === 'stores' && sidebar.brandId && (
-                <StoreManagement brandId={sidebar.brandId} currentUser={currentUser} />
+              {/* 오픈 일정 */}
+              {sidebar.section === 'franchise' && sidebar.brandId && (
+                <FranchiseScheduleView brandId={sidebar.brandId} />
               )}
 
               {/* 마케팅 봇 */}

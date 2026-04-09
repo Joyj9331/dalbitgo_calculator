@@ -143,4 +143,60 @@ export interface MarketingSchedule {
   daangnText: string;
   status: '대기중' | '발행완료' | '반려';
   createdAt: string;
-}
+}
+
+// ==========================================
+// 가맹점 일정 관리 (Franchise Schedules)
+// ==========================================
+export type ScheduleStatus = '계약완료' | '공사중' | '사전교육' | '인테리어완료' | '본교육' | '가오픈' | '오픈완료' | '보류';
+
+export interface FranchiseSchedule {
+  id: string;
+  brandId: BrandId;     // 어느 브랜드인지
+  storeNumber: string;  // 매장 호수 (예: 120호)
+  storeName: string;    // 매장명
+  team: string;         // 담당 팀
+  supervisor: string;   // 슈퍼바이저
+
+  // 세부 사항
+  constructionType: string; // 신규, 업종변경 등
+  kitchenVendor: string;    // 주방업체
+  gasType: string;          // 도시가스, LPG 등
+  notes: string;            // 특이사항
+
+  // 상태 관리
+  status: ScheduleStatus;
+  showInCalendar: boolean;  // 달력 표시 여부
+
+  // 일정 관련 (YYYY-MM-DD 형식 권장)
+  constructionStart: string;
+  constructionEnd: string;
+  ovenIn: string;
+  ovenEnd: string;
+  burnerIn: string;
+  initialStockIn: string;
+  initialStockEnd: string;
+  preTrainingStart: string;
+  preTrainingEnd: string;
+  preTrainingMemo: string; // 사전교육 내용
+  trainingStart: string;
+  trainingEnd: string;
+  openDate: string;
+
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+}
+
+export interface TeamSetting {
+  id: string;      // 팀 ID
+  brandId: BrandId;
+  name: string;    // 팀 명 (예: 1팀)
+  members: TeamMember[]; // 소속 SV들
+  createdAt?: string;
+}
+
