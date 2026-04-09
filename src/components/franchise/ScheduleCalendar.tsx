@@ -73,7 +73,7 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
     
     const events: any[] = [];
     schedules.forEach(s => {
-      if (!s.showInCalendar) return;
+      if (s.showInCalendar === false) return;
       const teamBg = getTeamColor(s.team);
 
       if (isDateInRange(dateStr, s.constructionStart, s.constructionEnd)) {
