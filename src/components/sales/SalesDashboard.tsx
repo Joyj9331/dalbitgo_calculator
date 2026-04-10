@@ -6,6 +6,12 @@ import { LayoutDashboard, CalendarDays, UploadCloud } from 'lucide-react';
 
 export function SalesDashboard({ activeBrand }: { activeBrand: string | null }) {
   const [activeTab, setActiveTab] = useState<'monthly' | 'daily' | 'import'>('monthly');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleUploaded = () => {
+    setRefreshKey(k => k + 1);
+    setActiveTab('monthly');
+  };
 
   return (
     <div className="space-y-6">
@@ -53,8 +59,8 @@ export function SalesDashboard({ activeBrand }: { activeBrand: string | null }) 
           </div>
         </div>
 
-        {activeTab === 'import' && <SalesDataImporter activeBrand={activeBrand} />}
-        {activeTab === 'monthly' && <MonthlySalesView activeBrand={activeBrand} />}
+        {activeTab === 'import' && <SalesDataImporter activeBrand={activeBrand} onUploaded={handleUploaded} />}
+        {activeTab === 'monthly' && <MonthlySalesView key={refreshKey} activeBrand={activeBrand} />}
         {activeTab === 'daily' && <DailySalesView activeBrand={activeBrand} />}
       </div>
     </div>
