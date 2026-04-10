@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { salesDb as db } from '../../firebase';
 import { DailySalesRecord, MonthlySalesRecord } from '../../types';
 import { formatShortMoney } from '../../utils';
 import { Loader2, Filter, Info } from 'lucide-react';

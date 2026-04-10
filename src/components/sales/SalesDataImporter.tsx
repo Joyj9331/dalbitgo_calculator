@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import Papa from 'papaparse';
 import { collection, writeBatch, doc, query, where, getDocs, setDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { auth } from '../../firebase';
+import { salesDb as db, auth } from '../../firebase';
 import { useToast } from '../Toast';
 import { Upload, FileSpreadsheet, Loader2, CheckCircle2, Trash2 } from 'lucide-react';
 

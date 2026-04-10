@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { salesDb as db } from '../../firebase';
 import { MonthlySalesRecord } from '../../types';
 import { formatShortMoney } from '../../utils';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
