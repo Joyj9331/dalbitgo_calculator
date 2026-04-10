@@ -41,6 +41,7 @@ function isValidDate(raw: any): boolean {
 export function SalesDataImporter({ activeBrand }: { activeBrand: string | null }) {
   const toast = useToast();
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [uploadType, setUploadType] = useState<'monthly' | 'daily'>('monthly');
   const [lastCount, setLastCount] = useState<number | null>(null);
 
@@ -189,21 +190,19 @@ export function SalesDataImporter({ activeBrand }: { activeBrand: string | null 
 
   // ── Firestore 청크 쓰기 (결정론적 ID → 재업로드 시 덮어쓰기) ──────
   const commitInChunks = async (records: any[], collName: string) => {
+    const totalChunks = Math.ceil(records.length / CHUNK_SIZE);
     for (let i = 0; i < records.length; i += CHUNK_SIZE) {
+      const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+      setUploadProgress(`저장 중... (${chunkNum}/${totalChunks} 배치)`);
       const batch = writeBatch(db);
       records.slice(i, i + CHUNK_SIZE).forEach((r) => {
         const { docId, ...data } = r;
         const ref = doc(db, collName, docId);
         batch.set(ref, { ...data, id: docId });
       });
-      // 30초 타임아웃 — Firestore 백오프 무한 대기 방지
-      await Promise.race([
-        batch.commit(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Firestore 응답 시간 초과 (30초). Firebase 보안 규칙 또는 네트워크를 확인하세요.')), 30000)
-        ),
-      ]);
+      await batch.commit();
     }
+    setUploadProgress('');
   };
 
   // ── 파일 선택 핸들러 ─────────────────────────────────────
@@ -281,7 +280,7 @@ export function SalesDataImporter({ activeBrand }: { activeBrand: string | null 
             className="w-full bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 dark:hover:bg-slate-600 text-white font-medium py-3 px-4 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2"
           >
             {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Upload size={20} />}
-            {isUploading ? '업로드 중...' : 'CSV 파일 선택 및 업로드'}
+            {isUploading ? (uploadProgress || '파일 분석 중...') : 'CSV 파일 선택 및 업로드'}
           </button>
         </div>
 
