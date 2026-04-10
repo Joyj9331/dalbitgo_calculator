@@ -25,6 +25,10 @@ interface Review {
   작성일: string;
   리뷰내용: string;
   감정분석: '긍정' | '부정' | '중립';
+  방문시간?: string;
+  동반자?: string;
+  고객반응_포인트?: string;
+  매장_TOP인기반응?: string;
 }
 
 interface RankData {
@@ -260,6 +264,15 @@ function OverviewTab({ reviews, reviewState, onResolve, onOverride }: {
                     <div className="bg-rose-50 dark:bg-rose-900/10 border border-rose-100 dark:border-rose-800 rounded-lg p-3">
                       <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{review.리뷰내용}</p>
                     </div>
+                    {(review.방문시간 || review.동반자 || review.고객반응_포인트) && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {review.방문시간 && <span className="px-2 py-0.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] font-medium rounded">{review.방문시간}</span>}
+                        {review.동반자 && <span className="px-2 py-0.5 bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 text-[10px] font-medium rounded">{review.동반자}</span>}
+                        {review.고객반응_포인트 && review.고객반응_포인트.split(',').map((pt, i) => (
+                          pt.trim() && <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-[10px] font-medium rounded border border-slate-200 dark:border-slate-700">#{pt.trim()}</span>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <button onClick={() => onResolve(review.id)} className="flex-1 py-2 text-xs font-semibold bg-slate-900 dark:bg-blue-600 text-white rounded-lg hover:bg-slate-700 dark:hover:bg-blue-700 transition-colors">
                         해피콜 조치 완료
@@ -344,6 +357,8 @@ function StoreTab({ reviews }: { reviews: Review[] }) {
   }, [storeReviews]);
 
   const maxCount = Math.max(...trendData.map(([, v]) => v.긍정 + v.부정 + v.중립), 1);
+  
+  const storeTopReactions = storeReviews.length > 0 ? storeReviews[0].매장_TOP인기반응 : '';
 
   // ✅ 월간 증감 추적 계산
   const monthlyTrend = useMemo(() => {
@@ -431,6 +446,19 @@ function StoreTab({ reviews }: { reviews: Review[] }) {
                 <KpiCard label="부정 평가" value={`${negCount}건`} icon={<AlertTriangle size={16} />} color={negCount > 0 ? 'text-rose-600 dark:text-rose-400' : undefined} />
               </div>
 
+              {storeTopReactions && storeTopReactions !== '없음' && (
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-100 dark:border-blue-800/50 p-4">
+                  <h3 className="text-xs font-semibold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-1.5">
+                    <Star size={14} className="text-blue-500" /> 매장 TOP 인기 반응 (네이버 AI 요약)
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {storeTopReactions.split(',').map((reaction, idx) => (
+                      reaction.trim() && <span key={idx} className="px-2.5 py-1 bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 text-[11px] font-bold rounded-full shadow-sm border border-blue-100 dark:border-blue-700/50">{reaction.trim()}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
                 <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-4">일자별 리뷰 감정 추이 (최근 14일)</h3>
                 <div className="flex items-end gap-1 h-28">
@@ -474,8 +502,17 @@ function StoreTab({ reviews }: { reviews: Review[] }) {
                     <div key={review.id} className="px-5 py-3 flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                       <SentimentBadge sentiment={review.감정분석} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-slate-400 mb-1">{review.작성일}</p>
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <p className="text-xs text-slate-400">{review.작성일}</p>
+                          {review.방문시간 && <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] font-medium rounded">{review.방문시간}</span>}
+                          {review.동반자 && <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 text-[10px] font-medium rounded">{review.동반자}</span>}
+                        </div>
                         <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{review.리뷰내용}</p>
+                        {review.고객반응_포인트 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {review.고객반응_포인트.split(',').map((pt, i) => pt.trim() && <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[10px] rounded-full border border-slate-200 dark:border-slate-700">#{pt.trim()}</span>)}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
