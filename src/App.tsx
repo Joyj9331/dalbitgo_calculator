@@ -814,7 +814,7 @@ export default function App() {
   };
 
   const handleExportCsv = () => {
-    const activeMenus = brandMenus.filter(m => !m.isArchived);
+    const activeMenus = brandMenus.filter(m => !m.isArchived && m.isVisible !== false);
     const data = activeMenus.map(m => {
       const cost = calculateTotalCost(m.recipe, brandIngredients, brandMenus);
       const row: any = { '메뉴명': m.name };
@@ -1292,6 +1292,39 @@ export default function App() {
                             <button onClick={() => setShowDeleteAllMenusConfirm(true)} className="px-4 py-2 bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400 hover:bg-rose-100 rounded-lg flex items-center gap-2 text-sm border border-rose-200 dark:border-rose-800"><Trash2 size={16} /> 전체 삭제</button>
                             <button onClick={() => { setEditingMenu(undefined); setIsMenuModalOpen(true); }} className="px-4 py-2 bg-slate-900 dark:bg-blue-600 text-white rounded-lg hover:bg-slate-800 flex items-center gap-2 text-sm"><Plus size={16} /> 메뉴 추가</button>
                           </div>
+                        </div>
+                        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden mb-4">
+                          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                            <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                              <Check size={15} className="text-emerald-500" /> 등록된 메뉴 <span className="text-xs font-normal text-slate-400">({activeMenus.length}개)</span>
+                            </h3>
+                          </div>
+                          {activeMenus.length === 0 ? (
+                            <p className="px-4 py-6 text-center text-sm text-slate-400">등록된 메뉴가 없습니다.</p>
+                          ) : (
+                            <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-72 overflow-y-auto">
+                              {activeMenus.map(menu => (
+                                <div key={menu.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-sm text-slate-700 dark:text-slate-300 truncate">{menu.name}</span>
+                                    {menu.isVisible === false && <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded shrink-0">숨김</span>}
+                                    {brandCategories.find(c => c.id === menu.categoryId) && (
+                                      <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded shrink-0">
+                                        {brandCategories.find(c => c.id === menu.categoryId)?.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => { setEditingMenu(menu); setIsMenuModalOpen(true); }}
+                                    className="p-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors shrink-0"
+                                    title="수정"
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-6 border border-slate-200 dark:border-slate-800">
                           <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Archive size={16} className="text-slate-400" />보관된 메뉴</h3>
