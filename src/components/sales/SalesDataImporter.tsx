@@ -28,27 +28,22 @@ interface UploadResult {
   type: 'monthly' | 'daily';
 }
 
-// 기존 데이터 불러와서 중복 제거 후 배치 저장
-async function commitWithDedup(
+/**
+ * 파일 내 중복 제거 후 배치 저장.
+ * DB 사전 조회 없음 — 동일 docId는 Firestore에서 동일 문서로 덮어쓰여 중복 없음.
+ * (대량 getDocs → 백오프 방지)
+ */
+async function commitBatch(
   records: any[],
   collName: string,
-  activeBrand: string | null,
-  onProgress: (msg: string) => void
+  onProgress: (msg: string) => void,
 ): Promise<{ written: number; skipped: number }> {
   if (records.length === 0) return { written: 0, skipped: 0 };
 
-  onProgress('기존 데이터 비교 중...');
-  const snap = await getDocs(
-    query(collection(db, collName), where('brandId', '==', activeBrand))
-  );
-  const existingMap = new Map<string, number>();
-  snap.docs.forEach(d => existingMap.set(d.id, Number(d.data().totalSales) || 0));
-
-  const toWrite = records.filter(r => {
-    const existing = existingMap.get(r.docId);
-    if (existing === undefined) return true;       // 신규
-    return existing !== r.totalSales;              // 금액이 다르면 업데이트
-  });
+  // 파일 내 동일 docId 중복 제거 (마지막 값 우선)
+  const deduped = new Map<string, any>();
+  records.forEach(r => deduped.set(r.docId, r));
+  const toWrite = Array.from(deduped.values());
   const skipped = records.length - toWrite.length;
 
   const totalChunks = Math.ceil(toWrite.length / CHUNK_SIZE) || 1;
@@ -109,7 +104,7 @@ export function SalesDataImporter({ activeBrand, onUploaded }: { activeBrand: st
               createdAt: new Date().toISOString(),
             });
           }
-          const { written, skipped } = await commitWithDedup(records, 'monthly_sales', activeBrand, setUploadProgress);
+          const { written, skipped } = await commitBatch(records, 'monthly_sales', setUploadProgress);
           // 모달 표시 — onUploaded는 모달 닫을 때 호출
           setUploadResult({ count: written, skipped, type: 'monthly' });
         } catch (err: any) {
@@ -169,7 +164,7 @@ export function SalesDataImporter({ activeBrand, onUploaded }: { activeBrand: st
                   createdAt: new Date().toISOString(),
                 });
               }
-              const { written, skipped } = await commitWithDedup(records, 'daily_sales', activeBrand, setUploadProgress);
+              const { written, skipped } = await commitBatch(records, 'daily_sales', setUploadProgress);
               setUploadResult({ count: written, skipped, type: 'daily' });
             } catch (err: any) {
               console.error(err);
