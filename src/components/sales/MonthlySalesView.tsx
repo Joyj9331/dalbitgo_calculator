@@ -4,7 +4,7 @@ import { salesDb as db } from '../../firebase';
 import { MonthlySalesRecord } from '../../types';
 import { formatShortMoney } from '../../utils';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, LabelList } from 'recharts';
-import { Loader2, TrendingUp, TrendingDown, Minus, Filter, List } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Minus, Filter, List, Maximize, Minimize } from 'lucide-react';
 
 export function MonthlySalesView({ activeBrand }: { activeBrand: string | null }) {
   const [data, setData] = useState<MonthlySalesRecord[]>([]);
@@ -17,6 +17,9 @@ export function MonthlySalesView({ activeBrand }: { activeBrand: string | null }
   const [stores, setStores] = useState<string[]>([]);
   
   const [storesMultiMode, setStoresMultiMode] = useState(false);
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [lastTap, setLastTap] = useState(0);
 
   useEffect(() => {
     if (!activeBrand) return;
@@ -35,6 +38,35 @@ export function MonthlySalesView({ activeBrand }: { activeBrand: string | null }
     };
     fetchData();
   }, [activeBrand]);
+
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    if (now - lastTap < 300) {
+      setIsFullscreen(!isFullscreen);
+    }
+    setLastTap(now);
+  };
 
   // Derived unique lists for filters
   const allYears = useMemo(() => Array.from(new Set(data.map(d => d.yearMonth.split('-')[0]))).sort((a: string, b: string) => b.localeCompare(a)), [data]);
@@ -236,10 +268,19 @@ export function MonthlySalesView({ activeBrand }: { activeBrand: string | null }
           )}
 
           {/* Line Chart */}
-          <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-            <h3 className="text-base font-bold mb-6 pl-2 border-l-4 border-blue-500">가맹점별 월별 매출 추이</h3>
-            <div className="h-[400px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+          <div 
+            className={isFullscreen ? "fixed inset-0 z-[100] bg-white dark:bg-slate-900 p-4 sm:p-8 flex flex-col" : "bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative"}
+            onTouchEnd={handleDoubleTap}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-base font-bold pl-2 border-l-4 border-blue-500">가맹점별 월별 매출 추이</h3>
+              <button onClick={() => setIsFullscreen(!isFullscreen)} className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="전체화면 (ESC로 종료)">
+                {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+              </button>
+            </div>
+            <div className={isFullscreen ? "flex-1 w-full min-h-0 overflow-x-auto overflow-y-hidden" : "h-[400px] w-full"}>
+              <div className="h-full min-h-[300px]" style={{ minWidth: isFullscreen && chartData.length > 12 ? `${chartData.length * 80}px` : '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <XAxis dataKey="yearMonth" tick={{fontSize: 12}} tickMargin={10} stroke="#94a3b8" />
@@ -259,6 +300,7 @@ export function MonthlySalesView({ activeBrand }: { activeBrand: string | null }
                   })}
                 </LineChart>
               </ResponsiveContainer>
+              </div>
             </div>
           </div>
 

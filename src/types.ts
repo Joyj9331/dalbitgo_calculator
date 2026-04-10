@@ -151,15 +151,6 @@ export interface MarketingSchedule {
 // ==========================================
 export type ScheduleStatus = '계약완료' | '공사중' | '사전교육' | '인테리어완료' | '본교육' | '가오픈' | '오픈완료' | '보류';
 
-export interface CustomPhase {
-  id: string;
-  name: string;
-  type: '단기' | '장기';
-  startDate: string;
-  endDate: string;
-  notes: string;
-}
-
 export interface FranchiseSchedule {
   id: string;
   brandId: BrandId;     // 어느 브랜드인지
@@ -207,8 +198,6 @@ export interface FranchiseSchedule {
   trainingEnd: string;
   openDate: string;
   
-  customPhases?: CustomPhase[];
-
   teamMembersSnapshot?: TeamMember[]; // 등록/수정 당시의 팀원 목록 스냅샷
 
   archived?: boolean;
@@ -230,4 +219,3 @@ export interface TeamSetting {
   color?: string;  // 팀별 고유 색상 (Tailwind bg class 등)
   createdAt?: string;
 }
-

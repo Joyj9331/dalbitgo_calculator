@@ -412,6 +412,7 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
           </div>
         </div>
       </div>
+      
     </div>
   );
 }
