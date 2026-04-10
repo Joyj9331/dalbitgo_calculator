@@ -221,6 +221,25 @@ function OverviewTab({ reviews, reviewState, onResolve, onOverride }: {
       .sort((a, b) => b.count - a.count);
   }, [reviews, yesterdayStr]);
 
+  // ✅ 브랜드 전체 고객 페르소나 집계 (동반자, 방문시간, 반응포인트)
+  const brandStats = useMemo(() => {
+    const companions: Record<string, number> = {};
+    const times: Record<string, number> = {};
+    const reactions: Record<string, number> = {};
+
+    reviews.forEach(r => {
+      if (r.동반자) r.동반자.split(',').forEach(c => { const t = c.trim(); if(t) companions[t] = (companions[t] || 0) + 1; });
+      if (r.방문시간) r.방문시간.split(',').forEach(t => { const v = t.trim(); if(v) times[v] = (times[v] || 0) + 1; });
+      if (r.고객반응_포인트) r.고객반응_포인트.split(',').forEach(p => { const t = p.trim(); if(t) reactions[t] = (reactions[t] || 0) + 1; });
+    });
+
+    return {
+      topCompanions: Object.entries(companions).sort((a, b) => b[1] - a[1]).slice(0, 3),
+      topTimes: Object.entries(times).sort((a, b) => b[1] - a[1]).slice(0, 3),
+      topReactions: Object.entries(reactions).sort((a, b) => b[1] - a[1]).slice(0, 8)
+    };
+  }, [reviews]);
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -230,6 +249,43 @@ function OverviewTab({ reviews, reviewState, onResolve, onOverride }: {
         <KpiCard label="긍정 리뷰 비율" value={`${positiveRate}%`} sub={`${positiveCount.toLocaleString()}건 긍정`} icon={<Star size={16} />}
           color={positiveRate >= 70 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'} />
         <KpiCard label="모니터링 매장 수" value={`${new Set(reviews.map(r => r.매장명)).size}개`} sub="전국 가맹점" icon={<Store size={16} />} />
+      </div>
+
+      {/* ✨ 신규: 브랜드 전체 고객 페르소나 및 핵심 가치 요약 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 lg:col-span-1">
+          <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+            👥 브랜드 주 고객층 (페르소나)
+          </h3>
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs text-slate-500 mb-1.5">주요 동반자</p>
+              <div className="flex flex-wrap gap-1.5">
+                {brandStats.topCompanions.map(([name, count], idx) => <span key={name} className={`px-2.5 py-1 text-[11px] font-bold rounded-lg ${idx === 0 ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>{name} <span className="opacity-60 font-normal">{count}</span></span>)}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 mb-1.5">주요 방문 시간대</p>
+              <div className="flex flex-wrap gap-1.5">
+                {brandStats.topTimes.map(([name, count], idx) => <span key={name} className={`px-2.5 py-1 text-[11px] font-bold rounded-lg ${idx === 0 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>{name} <span className="opacity-60 font-normal">{count}</span></span>)}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 lg:col-span-2">
+          <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+            💬 전국 매장 공통 반응 포인트 (Brand Core Value)
+          </h3>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {brandStats.topReactions.map(([name, count], idx) => (
+              <div key={name} className={`flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 rounded-full shadow-sm border ${idx < 3 ? 'border-emerald-200 dark:border-emerald-800/50' : 'border-slate-200 dark:border-slate-700'}`}>
+                <span className={`text-xs font-bold ${idx < 3 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>#{name}</span>
+                <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-900 px-1.5 py-0.5 rounded-md">{count}건</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-4">※ 수집된 전체 리뷰 데이터를 기반으로 고객이 직접 선택한 키워드를 집계합니다.</p>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
@@ -329,6 +385,8 @@ function StoreTab({ reviews }: { reviews: Review[] }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStore, setSelectedStore] = useState('');
   const [viewMode, setViewMode] = useState<'detail' | 'trend'>('detail');
+  const [timeFilter, setTimeFilter] = useState('all');
+  const [companionFilter, setCompanionFilter] = useState('all');
 
   const allStores = useMemo(() => [...new Set(reviews.map(r => r.매장명))].sort(), [reviews]);
   const filteredStores = searchQuery ? allStores.filter(s => s.replace(/ /g, '').includes(searchQuery.replace(/ /g, ''))) : allStores;
@@ -399,6 +457,45 @@ function StoreTab({ reviews }: { reviews: Review[] }) {
   const warningStores = monthlyTrend.filter(s => s.isWarning);
   const goodStores = monthlyTrend.filter(s => s.isGood);
 
+  // ✅ 필터 옵션 및 필터링된 리뷰 목록 계산
+  const displayedReviews = useMemo(() => {
+    return storeReviews.filter(r => {
+      const matchTime = timeFilter === 'all' || (r.방문시간 && r.방문시간.includes(timeFilter));
+      const matchCompanion = companionFilter === 'all' || (r.동반자 && r.동반자.includes(companionFilter));
+      return matchTime && matchCompanion;
+    });
+  }, [storeReviews, timeFilter, companionFilter]);
+
+  const timeOptions = useMemo(() => {
+    const times = new Set<string>();
+    storeReviews.forEach(r => { if (r.방문시간) r.방문시간.split(',').forEach(t => times.add(t.trim())); });
+    return ['all', ...Array.from(times).filter(Boolean)];
+  }, [storeReviews]);
+
+  const companionOptions = useMemo(() => {
+    const companions = new Set<string>();
+    storeReviews.forEach(r => { if (r.동반자) r.동반자.split(',').forEach(c => companions.add(c.trim())); });
+    return ['all', ...Array.from(companions).filter(Boolean)];
+  }, [storeReviews]);
+
+  // ✅ 고객 트렌드 통계 집계 (TOP 3 동반자)
+  const companionCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    storeReviews.forEach(r => {
+      if (r.동반자) r.동반자.split(',').forEach(c => { const t = c.trim(); if(t) counts[t] = (counts[t] || 0) + 1; });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  }, [storeReviews]);
+
+  // ✅ 고객 트렌드 통계 집계 (TOP 5 반응 포인트)
+  const reactionCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    storeReviews.forEach(r => {
+      if (r.고객반응_포인트) r.고객반응_포인트.split(',').forEach(p => { const t = p.trim(); if(t) counts[t] = (counts[t] || 0) + 1; });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [storeReviews]);
+
   return (
     <div className="space-y-5">
       {/* 뷰 모드 전환 */}
@@ -459,6 +556,31 @@ function StoreTab({ reviews }: { reviews: Review[] }) {
                 </div>
               )}
 
+              {/* ✨ 신규: 고객 방문 트렌드 통계 요약 */}
+              {(companionCounts.length > 0 || reactionCounts.length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
+                    <h3 className="font-semibold text-xs text-slate-500 dark:text-slate-400 mb-3">👥 주요 동반자 유형 (TOP 3)</h3>
+                    <div className="flex gap-2">
+                      {companionCounts.map(([name, count]) => (
+                        <div key={name} className="flex-1 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-2 text-center border border-slate-100 dark:border-slate-800">
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{name}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">{count}건</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
+                    <h3 className="font-semibold text-xs text-slate-500 dark:text-slate-400 mb-3">💬 주요 고객 반응 포인트 (TOP 5)</h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {reactionCounts.map(([name, count]) => (
+                        <span key={name} className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-medium rounded-md border border-slate-200 dark:border-slate-700">#{name} <span className="text-slate-400 ml-0.5">{count}</span></span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
                 <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-4">일자별 리뷰 감정 추이 (최근 14일)</h3>
                 <div className="flex items-end gap-1 h-28">
@@ -494,11 +616,23 @@ function StoreTab({ reviews }: { reviews: Review[] }) {
               </div>
 
               <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800">
-                  <h3 className="font-semibold text-sm text-slate-900 dark:text-white">수집된 리뷰 목록</h3>
+                <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <h3 className="font-semibold text-sm text-slate-900 dark:text-white">수집된 리뷰 목록 <span className="text-xs font-normal text-slate-400">({displayedReviews.length}건)</span></h3>
+                  
+                  {/* ✨ 신규: 정밀 필터링 드롭다운 */}
+                  <div className="flex items-center gap-2">
+                    <select value={timeFilter} onChange={e => setTimeFilter(e.target.value)} className="py-1.5 px-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none text-slate-700 dark:text-slate-300 cursor-pointer">
+                      <option value="all">방문시간 전체</option>
+                      {timeOptions.filter(t => t !== 'all').map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <select value={companionFilter} onChange={e => setCompanionFilter(e.target.value)} className="py-1.5 px-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none text-slate-700 dark:text-slate-300 cursor-pointer">
+                      <option value="all">동반자 전체</option>
+                      {companionOptions.filter(c => c !== 'all').map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-96 overflow-y-auto">
-                  {storeReviews.map(review => (
+                  {displayedReviews.map(review => (
                     <div key={review.id} className="px-5 py-3 flex items-start gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                       <SentimentBadge sentiment={review.감정분석} />
                       <div className="flex-1 min-w-0">
@@ -654,6 +788,18 @@ function MarketingTab({ rankData, roiData }: { rankData: RankData[]; roiData: Ro
   const storeRanks = latestRankData.filter(r => r.매장명 === selectedStore);
   const sortedRoi = useMemo(() => [...roiData].sort((a, b) => parseRate(b.키워드_적중률) - parseRate(a.키워드_적중률)), [roiData]);
 
+  // ✅ ROI 및 검색량 기반 본사 권고 액션 도출 함수
+  const getMarketingAction = (rate: number, searchVolumeStr: string, isNoKeyword: boolean) => {
+    if (isNoKeyword) return { text: "키워드 긴급 세팅 필요", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/10 border-rose-200" };
+    
+    const vol = parseInt(searchVolumeStr.replace(/[^0-9]/g, '')) || 0;
+    
+    if (rate >= 40 && vol >= 1000) return { text: "마케팅 우수 (현행 유지)", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200" };
+    if (rate >= 40 && vol < 1000) return { text: "상권 키워드 확장 필요", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/10 border-amber-200" };
+    if (rate < 40 && vol >= 1000) return { text: "리뷰 내 키워드 삽입 유도", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/10 border-blue-200" };
+    return { text: "키워드 전면 재검토", color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-50 dark:bg-slate-800/50 border-slate-200" };
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -727,7 +873,7 @@ function MarketingTab({ rankData, roiData }: { rankData: RankData[]; roiData: Ro
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
-                {['매장명', '키워드 적중률', '월간 검색량', '세팅된 키워드'].map(h => (
+                {['매장명', '키워드 적중률', '월간 검색량', '세팅된 키워드', '본사 지도 액션'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">{h}</th>
                 ))}
               </tr>
@@ -736,6 +882,8 @@ function MarketingTab({ rankData, roiData }: { rankData: RankData[]; roiData: Ro
               {sortedRoi.map(roi => {
                 const rate = parseRate(roi.키워드_적중률);
                 const isNoKeyword = roi.세팅된_키워드 === '키워드 미설정';
+                const action = getMarketingAction(rate, roi.네이버_월간_총검색량, isNoKeyword);
+                
                 return (
                   <tr key={roi.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer ${selectedStore === roi.매장명 ? 'bg-blue-50 dark:bg-blue-900/10' : ''}`} onClick={() => setSelectedStore(roi.매장명)}>
                     <td className="px-4 py-3 text-sm font-medium text-slate-800 dark:text-slate-200">{roi.매장명}</td>
@@ -751,6 +899,11 @@ function MarketingTab({ rankData, roiData }: { rankData: RankData[]; roiData: Ro
                     <td className="px-4 py-3">
                       {isNoKeyword ? <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">미설정</span>
                         : <span className="text-xs text-slate-500 dark:text-slate-400 truncate block max-w-xs">{roi.세팅된_키워드}</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-block px-2 py-1 text-[11px] font-bold rounded-md border ${action.color} ${action.bg}`}>
+                        {action.text}
+                      </span>
                     </td>
                   </tr>
                 );
@@ -790,12 +943,36 @@ function CompetitorTab({ competitorData }: { competitorData: CompetitorData[] })
     return { min: Math.min(...prices), max: Math.max(...prices) };
   }
 
+  // ✅ 시장 평균 및 최저/최고가 분석 (본사 전략 수립용)
+  const marketStats = useMemo(() => {
+    const allPrices = latestData.map(d => getMackerelPrice(d.메뉴_및_가격)).filter(p => p > 0);
+    if (allPrices.length === 0) return null;
+    
+    const avg = Math.round(allPrices.reduce((a, b) => a + b, 0) / allPrices.length);
+    const min = Math.min(...allPrices);
+    const max = Math.max(...allPrices);
+    
+    return { avg, min, max, count: allPrices.length };
+  }, [latestData]);
+
   return (
     <div className="space-y-5">
-      <p className="text-xs text-slate-500 dark:text-slate-400">
-        데이터 기준일: <span className="font-medium text-slate-700 dark:text-slate-300">{latestDate || '수집 전'}</span>
-        <span className="ml-2 text-slate-400">· 매일 자동 수집되며 경쟁사 메뉴 및 가격 변동을 감지합니다.</span>
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          데이터 기준일: <span className="font-medium text-slate-700 dark:text-slate-300">{latestDate || '수집 전'}</span>
+          <span className="ml-2 text-slate-400">· 매일 자동 수집되며 4대 핵심 경쟁사 메뉴 및 가격 변동을 감지합니다.</span>
+        </p>
+      </div>
+
+      {/* ✨ 신규: 경쟁 시장 가격 포지셔닝 요약 (Market Overview) */}
+      {marketStats && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+          <KpiCard label="경쟁 4사 평균 고등어구이 단가" value={`${marketStats.avg.toLocaleString()}원`} sub={`총 ${marketStats.count}개 매장 표본 기준`} icon={<Activity size={16} />} color="text-indigo-600 dark:text-indigo-400" />
+          <KpiCard label="시장 최저가 (경쟁 하한선)" value={`${marketStats.min.toLocaleString()}원`} sub="가성비 방어 마지노선" icon={<ArrowDown size={16} />} color="text-blue-600 dark:text-blue-400" />
+          <KpiCard label="시장 최고가 (프리미엄 상한선)" value={`${marketStats.max.toLocaleString()}원`} sub="프리미엄/반상 전략 매장" icon={<ArrowUp size={16} />} color="text-rose-600 dark:text-rose-400" />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {TARGET_BRANDS.map(brand => {
           const brandData = latestData.filter(d => d.경쟁브랜드명_엑셀.includes(brand));
