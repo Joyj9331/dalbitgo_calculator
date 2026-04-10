@@ -5,7 +5,9 @@ import { db } from '../../firebase';
 import { useToast } from '../Toast';
 import { Upload, FileSpreadsheet, Loader2, CheckCircle2, Trash2 } from 'lucide-react';
 
-const CHUNK_SIZE = 499;
+const CHUNK_SIZE = 100; // named DB 타임아웃 방지 — 소규모 배치
+const BATCH_DELAY_MS = 300; // 배치 간 딜레이 (rate limit 방지)
+const MAX_RETRY = 3; // 배치 실패 시 최대 재시도 횟수
 
 function normalizeDailyStoreName(raw: string): string {
   let s = String(raw).trim();
@@ -29,9 +31,8 @@ interface UploadResult {
 }
 
 /**
- * 파일 내 중복 제거 후 배치 저장.
- * DB 사전 조회 없음 — 동일 docId는 Firestore에서 동일 문서로 덮어쓰여 중복 없음.
- * (대량 getDocs → 백오프 방지)
+ * 파일 내 중복 제거 후 소규모 배치 저장 (재시도 포함).
+ * CHUNK_SIZE=100, 배치 간 딜레이, 실패 시 최대 MAX_RETRY 재시도.
  */
 async function commitBatch(
   records: any[],
@@ -47,15 +48,34 @@ async function commitBatch(
   const skipped = records.length - toWrite.length;
 
   const totalChunks = Math.ceil(toWrite.length / CHUNK_SIZE) || 1;
+
   for (let i = 0; i < toWrite.length; i += CHUNK_SIZE) {
     const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
-    onProgress(`저장 중... (${chunkNum}/${totalChunks} 배치)`);
-    const batch = writeBatch(db);
-    toWrite.slice(i, i + CHUNK_SIZE).forEach(r => {
-      const { docId, ...data } = r;
-      batch.set(doc(db, collName, docId), { ...data, id: docId });
-    });
-    await batch.commit();
+    const chunk = toWrite.slice(i, i + CHUNK_SIZE);
+
+    let attempt = 0;
+    while (attempt < MAX_RETRY) {
+      try {
+        onProgress(`저장 중... (${chunkNum}/${totalChunks} 배치${attempt > 0 ? ` 재시도 ${attempt}` : ''})`);
+        const batch = writeBatch(db);
+        chunk.forEach(r => {
+          const { docId, ...data } = r;
+          batch.set(doc(db, collName, docId), { ...data, id: docId });
+        });
+        await batch.commit();
+        break; // 성공
+      } catch (err) {
+        attempt++;
+        if (attempt >= MAX_RETRY) throw err;
+        // 재시도 전 대기 (지수 백오프)
+        await new Promise(res => setTimeout(res, 1000 * attempt));
+      }
+    }
+
+    // 다음 배치 전 딜레이
+    if (i + CHUNK_SIZE < toWrite.length) {
+      await new Promise(res => setTimeout(res, BATCH_DELAY_MS));
+    }
   }
 
   return { written: toWrite.length, skipped };
