@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { salesDb as db } from '../../firebase';
 import { collection, getDocs, doc, deleteDoc, updateDoc, addDoc, getDoc, setDoc } from 'firebase/firestore';
 import { FranchiseSchedule, TeamSetting, BrandId } from '../../types';
-import { Plus, Search, Settings, CheckCircle2, Eye, EyeOff, X, Layers } from 'lucide-react';
+import { Plus, Search, Settings, CheckCircle2, Eye, EyeOff, X, Layers, CheckCheck } from 'lucide-react';
 import { useToast } from '../Toast';
 import { useConfirm } from '../ConfirmModal';
 
@@ -263,7 +263,7 @@ export function FranchiseScheduleView({ brandId }: Props) {
                            <th className="p-3">사전교육 정보</th>
                            <th className="p-3">본사 교육</th>
                            <th className="p-3">오픈일</th>
-                           <th className="p-3 w-20 text-center">삭제</th>
+                           <th className="p-3 w-28 text-center">관리</th>
                          </tr>
                        </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
@@ -337,7 +337,18 @@ export function FranchiseScheduleView({ brandId }: Props) {
                              <td className="p-3 text-[10px]">{sch.trainingStart || '-'}</td>
                              <td className="p-3 text-sm font-bold text-rose-500 font-mono">{sch.openDate}</td>
                             <td className="p-3 text-center">
-                              <button onClick={() => handleDeleteSchedule(sch.id)} className="text-red-300 hover:text-red-500"><X size={16} /></button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                {!sch.archived && (
+                                  <button
+                                    onClick={() => handleArchive(sch.id)}
+                                    className="text-emerald-400 hover:text-emerald-600 p-1 rounded hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                                    title="오픈 완료 보관"
+                                  >
+                                    <CheckCheck size={15} />
+                                  </button>
+                                )}
+                                <button onClick={() => handleDeleteSchedule(sch.id)} className="text-red-300 hover:text-red-500 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"><X size={15} /></button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -356,7 +367,7 @@ export function FranchiseScheduleView({ brandId }: Props) {
         )}
 
         {showForm && (
-          <ScheduleFormModal initial={editingData || {}} teams={teams} schedules={schedules} onSave={handleSaveSchedule} onClose={() => { setShowForm(false); setEditingData(null); }} />
+          <ScheduleFormModal initial={editingData || {}} teams={teams} schedules={schedules} processSettings={processSettings} onSave={handleSaveSchedule} onClose={() => { setShowForm(false); setEditingData(null); }} />
         )}
 
         {showTeamSettings && (

@@ -3,11 +3,13 @@ import { FranchiseSchedule, TeamSetting } from '../../types';
 import { X, Calculator, AlertCircle, Palette, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../Toast';
 import { addDays, diffDays, addExcludingSunday, getOvenInDate, getPreTrainingStartDate } from '../../utils';
+import { BUILTIN_PROGRESS, ProcessSettings } from './ProcessMasterModal';
 
 interface Props {
   initial: Partial<FranchiseSchedule>;
   teams: TeamSetting[];
   schedules: FranchiseSchedule[];
+  processSettings?: ProcessSettings;
   onSave: (data: Partial<FranchiseSchedule>) => Promise<void>;
   onClose: () => void;
 }
@@ -41,7 +43,7 @@ export const CALENDAR_COLORS = [
   { id: 'neutral', bg: 'bg-neutral-500', hover: 'hover:bg-neutral-600' },
 ];
 
-export function ScheduleFormModal({ initial, teams, schedules, onSave, onClose }: Props) {
+export function ScheduleFormModal({ initial, teams, schedules, processSettings, onSave, onClose }: Props) {
   const [form, setForm] = useState<Partial<FranchiseSchedule>>({
     showInCalendar: true,
     progressCheck: {
@@ -67,6 +69,16 @@ export function ScheduleFormModal({ initial, teams, schedules, onSave, onClose }
       progressCheck: {
         ...(prev.progressCheck || { ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
         [key]: val
+      }
+    }));
+  };
+
+  const setCustomProgress = (id: string, val: boolean) => {
+    setForm(prev => ({
+      ...prev,
+      customProgressCheck: {
+        ...((prev as any).customProgressCheck || {}),
+        [id]: val
       }
     }));
   };
@@ -344,27 +356,39 @@ export function ScheduleFormModal({ initial, teams, schedules, onSave, onClose }
               <Calculator size={16} /> 진행 관리 프로세스
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {[
-                { key: 'ovenOrder', label: '화덕 발주' },
-                { key: 'ownerGuide', label: '점주 안내' },
-                { key: 'equipmentOrder', label: '대/소집기 발주' },
-                { key: 'internetOrder', label: '인터넷 주문' },
-                { key: 'initialEntry', label: '초도 입력' }
-              ].map(item => (
-                <button 
-                  key={item.key} 
-                  type="button"
-                  onClick={() => setProgress(item.key as any, !form.progressCheck?.[item.key as keyof typeof form.progressCheck])}
-                  className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all group ${form.progressCheck?.[item.key as keyof typeof form.progressCheck] ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-800 bg-slate-800/50 hover:bg-slate-800 text-slate-400'}`}
-                >
-                  <div className={`w-5 h-5 mb-3 rounded border flex items-center justify-center ${form.progressCheck?.[item.key as keyof typeof form.progressCheck] ? 'bg-white text-blue-600 border-white' : 'border-slate-700'}`}>
-                    {form.progressCheck?.[item.key as keyof typeof form.progressCheck] && <div className="w-2.5 h-2.5 bg-blue-600 rounded-sm" />}
-                  </div>
-                  <span className="text-xs font-bold">
-                    {item.label}
-                  </span>
-                </button>
-              ))}
+              {BUILTIN_PROGRESS.map(item => {
+                const label = processSettings?.progressLabels?.[item.id] ?? item.defaultLabel;
+                const checked = form.progressCheck?.[item.id as keyof typeof form.progressCheck] || false;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setProgress(item.id as any, !checked)}
+                    className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all group ${checked ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-800 bg-slate-800/50 hover:bg-slate-800 text-slate-400'}`}
+                  >
+                    <div className={`w-5 h-5 mb-3 rounded border flex items-center justify-center ${checked ? 'bg-white text-blue-600 border-white' : 'border-slate-700'}`}>
+                      {checked && <div className="w-2.5 h-2.5 bg-blue-600 rounded-sm" />}
+                    </div>
+                    <span className="text-xs font-bold">{label}</span>
+                  </button>
+                );
+              })}
+              {processSettings?.customItems?.map(item => {
+                const checked = (form as any).customProgressCheck?.[item.id] || false;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setCustomProgress(item.id, !checked)}
+                    className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all group ${checked ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-800 bg-slate-800/50 hover:bg-slate-800 text-slate-400'}`}
+                  >
+                    <div className={`w-5 h-5 mb-3 rounded border flex items-center justify-center ${checked ? 'bg-white text-emerald-600 border-white' : 'border-slate-700'}`}>
+                      {checked && <div className="w-2.5 h-2.5 bg-emerald-600 rounded-sm" />}
+                    </div>
+                    <span className="text-xs font-bold">{item.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
