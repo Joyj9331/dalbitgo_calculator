@@ -193,11 +193,16 @@ export function SalesDataImporter({ activeBrand }: { activeBrand: string | null 
       const batch = writeBatch(db);
       records.slice(i, i + CHUNK_SIZE).forEach((r) => {
         const { docId, ...data } = r;
-        // docId를 문서 ID로 사용 → 동일 기간+매장 재업로드 시 덮어쓰기
         const ref = doc(db, collName, docId);
         batch.set(ref, { ...data, id: docId });
       });
-      await batch.commit();
+      // 30초 타임아웃 — Firestore 백오프 무한 대기 방지
+      await Promise.race([
+        batch.commit(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Firestore 응답 시간 초과 (30초). Firebase 보안 규칙 또는 네트워크를 확인하세요.')), 30000)
+        ),
+      ]);
     }
   };
 
