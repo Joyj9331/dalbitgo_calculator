@@ -68,45 +68,69 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
         });
       }));
 
-      const CANVAS_WIDTH = 1080; // 인스타 권장 가로 사이즈
-      const PADDING = 40;
-      const SPACING = -60; // 겹침 정도 (음수로 설정하여 위로 겹치게 함)
+      const CANVAS_SIZE = 1080; // 1:1 정사각형 캔버스 (인스타 피드 최적화)
+      canvas.width = CANVAS_SIZE;
+      canvas.height = CANVAS_SIZE;
 
-      const scaledImages = imgs.map(img => {
-        const scale = (CANVAS_WIDTH - PADDING * 2) / img.width;
-        return { img, width: CANVAS_WIDTH - PADDING * 2, height: img.height * scale };
-      });
-
-      const positions: number[] = [];
-      let currentY = PADDING;
-      for (let i = 0; i < scaledImages.length; i++) {
-        positions.push(currentY);
-        currentY += scaledImages[i].height + SPACING;
-      }
-
-      canvas.width = CANVAS_WIDTH;
-      canvas.height = currentY - SPACING + PADDING;
-
-      ctx.fillStyle = '#f8fafc'; // 깔끔한 연한 배경
+      ctx.fillStyle = '#f8fafc'; // 깔끔한 배경
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 역순으로 그려서 윗 리뷰가 아래 리뷰의 닉네임 부분을 자연스럽게 덮도록 처리
-      for (let i = scaledImages.length - 1; i >= 0; i--) {
-        const si = scaledImages[i];
-        const y = positions[i];
+      const N = imgs.length;
+      // 사진 개수에 따라 유동적으로 그리드(행/열) 수 계산
+      const cols = Math.ceil(Math.sqrt(N));
+      const rows = Math.ceil(N / cols);
 
-        // 그림자 효과 부여 (입체감)
-        ctx.shadowColor = 'rgba(0,0,0,0.15)';
+      const cellW = CANVAS_SIZE / cols;
+      const cellH = CANVAS_SIZE / rows;
+
+      // 러프한 겹침(스크랩북) 스타일로 렌더링
+      for (let i = 0; i < N; i++) {
+        const img = imgs[i];
+
+        // 1. 임시 캔버스에 이미지 + 닉네임 모자이크 처리
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
+        const tCtx = tempCanvas.getContext('2d');
+        if (!tCtx) continue;
+
+        tCtx.drawImage(img, 0, 0);
+        const blurHeight = Math.floor(img.height * 0.15);
+        tCtx.filter = 'blur(15px)';
+        tCtx.drawImage(tempCanvas, 0, 0, img.width, blurHeight, 0, 0, img.width, blurHeight);
+        tCtx.filter = 'none';
+
+        // 2. 그리드 위치 계산 및 러프한 변형(오프셋, 회전)
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const isSingle = N === 1;
+
+        // 약간의 랜덤 오프셋 적용
+        const offsetX = isSingle ? 0 : (Math.random() - 0.5) * (cellW * 0.3);
+        const offsetY = isSingle ? 0 : (Math.random() - 0.5) * (cellH * 0.3);
+        const centerX = col * cellW + cellW / 2 + offsetX;
+        const centerY = row * cellH + cellH / 2 + offsetY;
+
+        // 그리드 셀보다 40% 크게 만들어 겹치게 설정
+        const targetW = isSingle ? CANVAS_SIZE * 0.8 : cellW * 1.4;
+        const scale = targetW / tempCanvas.width;
+        const targetH = tempCanvas.height * scale;
+
+        // 랜덤 회전 (-8도 ~ 8도)
+        const angle = isSingle ? 0 : (Math.random() - 0.5) * 16 * Math.PI / 180;
+
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(angle);
+
+        // 폴라로이드 사진처럼 입체적인 그림자
+        ctx.shadowColor = 'rgba(0,0,0,0.25)';
         ctx.shadowBlur = 25;
-        ctx.shadowOffsetY = 12;
-        ctx.drawImage(si.img, PADDING, y, si.width, si.height);
-        ctx.shadowColor = 'transparent';
+        ctx.shadowOffsetY = 15;
 
-        // 상단 15% 블러 처리 (닉네임 확실하게 모자이크)
-        const blurHeight = Math.floor(si.height * 0.15);
-        ctx.filter = 'blur(15px)';
-        ctx.drawImage(canvas, PADDING, y, si.width, blurHeight, PADDING, y, si.width, blurHeight);
-        ctx.filter = 'none';
+        // 캔버스에 그리기
+        ctx.drawImage(tempCanvas, -targetW / 2, -targetH / 2, targetW, targetH);
+        ctx.restore();
       }
 
       setCollageUrl(canvas.toDataURL('image/jpeg', 0.8)); // DB 용량 최적화를 위해 압축률 0.8 적용
@@ -265,6 +289,7 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
 
 [NAVER]
 최소 1,200자 이상. 구성: ①방문 도입부 → ②메뉴/분위기 상세(이미지 묘사 포함) → ③고객 반응 인용 → ④아래 정보 박스.
+※ 중요: 글의 흐름에 맞춰 문단 사이사이에 반드시 "[📸 이곳에 매장 외부/내부 사진 삽입]", "[📸 이곳에 메인 음식 사진 삽입]", "[📸 이곳에 리뷰 콜라주 이미지 삽입]" 등 정확한 사진 첨부 가이드를 3~5회 이상 배치할 것.
 ---
 [매장 정보 안내]
 매장명: ${storeName}
@@ -274,9 +299,13 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
 ---
 
 [INSTA]
+<💡 썸네일 가이드: 1번째 사진으로 '리뷰 콜라주 이미지'를, 2번째부터 '매장/음식 사진'을 순서대로 올려주세요.>
+
 본문 150~300자 + 해시태그 20개 이상. 감성 도입 → 핵심 매력 → 방문 유도 → 해시태그(브랜드/지역/메뉴/감성 혼합).
 
 [DAANGN]
+<💡 사진 가이드: 다운받은 '리뷰 콜라주 이미지'와 가장 먹음직스러운 '메뉴 사진'을 함께 첨부해 주세요.>
+
 200~400자. 지역 주민 공감대 → 매장 핵심 매력 1~2가지 → 방문 유도. 지역명 반드시 포함. 친근한 구어체.
 
 [주의] 과장 표현 금지. 구분자 [NAVER], [INSTA], [DAANGN] 필수.`;
