@@ -251,109 +251,115 @@ export function FranchiseScheduleView({ brandId }: Props) {
                    </button>
                  </div>
                  
-                 <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 shadow-sm">
-                    <table className="w-full text-left text-sm whitespace-nowrap">
-                       <thead className="bg-slate-50 dark:bg-slate-800/50 border-b text-slate-500 text-xs">
-                         <tr>
-                           <th className="p-3 w-10">노출</th>
-                           <th className="p-3">상호명 및 호수</th>
-                           <th className="p-3 text-center">진행 관리</th>
-                           <th className="p-3">가스</th>
-                           <th className="p-3">공사/입고일</th>
-                           <th className="p-3">사전교육 정보</th>
-                           <th className="p-3">본사 교육</th>
-                           <th className="p-3">오픈일</th>
-                           <th className="p-3 w-28 text-center">관리</th>
-                         </tr>
-                       </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
-                        {filteredSchedules.map(sch => (
-                          <tr key={sch.id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/30 ${sch.archived ? 'opacity-50' : ''}`}>
-                            <td className="p-3">
+                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {filteredSchedules.length === 0 ? (
+                      <div className="col-span-full py-10 text-center text-slate-400 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">해당하는 매장이 없습니다.</div>
+                    ) : (
+                      filteredSchedules.map(sch => (
+                        <div key={sch.id} className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col ${sch.archived ? 'opacity-60' : ''}`}>
+                          {/* Header: Actions & Visibility */}
+                          <div className="flex justify-between items-start mb-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                            <button onClick={() => { setEditingData(sch); setShowForm(true); }} className="text-left group flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className={`w-3 h-3 rounded-full flex-shrink-0 bg-${sch.colorCode || 'slate'}-500 shadow-sm`} />
+                                <span className="font-bold text-base text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors truncate">{sch.storeName}</span>
+                                <span className="text-[10px] text-slate-500 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded shrink-0">{sch.storeNumber || '호수 미정'}</span>
+                              </div>
+                              <div className="text-xs text-slate-500 font-medium ml-5">{sch.team || '팀 미정'}</div>
+                            </button>
+                            <div className="flex items-center gap-1 shrink-0 ml-2">
                                <button 
                                  onClick={() => { updateDoc(doc(db, 'franchise_schedules', sch.id), { showInCalendar: sch.showInCalendar === false }); fetchData(); }}
-                                 className={`p-1 rounded transition-colors ${sch.showInCalendar !== false ? 'text-blue-500 bg-blue-50' : 'text-slate-300 bg-slate-100'}`}
-                                 title={sch.showInCalendar !== false ? '달력 노출 중' : '기능 숨김'}
+                                 className={`p-1.5 rounded transition-colors ${sch.showInCalendar !== false ? 'text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20' : 'text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                 title={sch.showInCalendar !== false ? '달력 노출 중' : '달력 숨김'}
                                >
-                                  {sch.showInCalendar !== false ? <Eye size={14} /> : <EyeOff size={14} />}
+                                  {sch.showInCalendar !== false ? <Eye size={15} /> : <EyeOff size={15} />}
                                </button>
-                            </td>
-                            <td className="p-3 font-bold text-slate-800 dark:text-slate-200">
-                               <button onClick={() => { setEditingData(sch); setShowForm(true); }} className="hover:underline flex items-center gap-3">
-                                 <div className={`w-3 h-3 rounded-full flex-shrink-0 bg-${sch.colorCode || 'slate'}-500 shadow-sm`} />
-                                 <div className="flex flex-col items-start leading-tight">
-                                   <span className="text-sm">{sch.storeName}</span>
-                                   <span className="text-[10px] text-slate-400">{sch.storeNumber} / {sch.team || '팀 미정'}</span>
-                                 </div>
+                               {!sch.archived && (
+                                 <button
+                                   onClick={() => handleArchive(sch.id)}
+                                   className="p-1.5 text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded transition-colors"
+                                   title="오픈 완료 보관"
+                                 >
+                                   <CheckCheck size={15} />
+                                 </button>
+                               )}
+                               <button onClick={() => handleDeleteSchedule(sch.id)} className="p-1.5 text-rose-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded transition-colors" title="삭제">
+                                 <X size={15} />
                                </button>
-                            </td>
-                             <td className="p-3">
-                                <div className="flex justify-center gap-1.5 flex-wrap">
-                                   {BUILTIN_PROGRESS.map(p => {
-                                     const label = processSettings.progressLabels[p.id] ?? p.defaultLabel;
-                                     const checked = sch.progressCheck?.[p.id as keyof FranchiseSchedule['progressCheck']] || false;
-                                     return (
-                                       <button
-                                         key={p.id}
-                                         onClick={() => handleToggleProgress(sch.id, p.id as any, checked)}
-                                         className={`flex flex-col items-center gap-0.5 p-1 rounded-md transition-colors ${checked ? 'text-blue-600 bg-blue-50' : 'text-slate-300'}`}
-                                         title={label}
-                                       >
-                                         <CheckCircle2 size={12} className={checked ? '' : 'opacity-20'} />
-                                         <span className="text-[8px] font-bold">{label}</span>
-                                       </button>
-                                     );
-                                   })}
-                                   {processSettings.customItems.map(ci => {
-                                     const checked = (sch as any).customProgressCheck?.[ci.id] || false;
-                                     return (
-                                       <button
-                                         key={ci.id}
-                                         onClick={async () => {
-                                           await updateDoc(doc(db, 'franchise_schedules', sch.id), {
-                                             [`customProgressCheck.${ci.id}`]: !checked,
-                                           });
-                                           fetchData();
-                                         }}
-                                         className={`flex flex-col items-center gap-0.5 p-1 rounded-md transition-colors ${checked ? 'text-emerald-600 bg-emerald-50' : 'text-slate-300'}`}
-                                         title={ci.label}
-                                       >
-                                         <CheckCircle2 size={12} className={checked ? '' : 'opacity-20'} />
-                                         <span className="text-[8px] font-bold">{ci.label}</span>
-                                       </button>
-                                     );
-                                   })}
-                                </div>
-                             </td>
-                             <td className="p-3 font-semibold text-slate-600 dark:text-slate-400">{sch.gasType || '미등록'}</td>
-                             <td className="p-3 text-[10px] text-slate-500">
-                                <div>S: {sch.constructionStart || '-'} / E: {sch.constructionEnd || '-'}</div>
-                                <div>🔥: {sch.ovenIn || '-'} / 📦: {sch.initialStockIn || '-'}</div>
-                             </td>
-                             <td className="p-3 text-[10px]">
-                                <div className="font-bold">{sch.preTrainingStart || '-'} ({sch.preTrainingDays || 0}일)</div>
-                                <div className="text-slate-400">📍 {sch.preTrainingLocation || '-'}</div>
-                             </td>
-                             <td className="p-3 text-[10px]">{sch.trainingStart || '-'}</td>
-                             <td className="p-3 text-sm font-bold text-rose-500 font-mono">{sch.openDate}</td>
-                            <td className="p-3 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                {!sch.archived && (
-                                  <button
-                                    onClick={() => handleArchive(sch.id)}
-                                    className="text-emerald-400 hover:text-emerald-600 p-1 rounded hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
-                                    title="오픈 완료 보관"
-                                  >
-                                    <CheckCheck size={15} />
-                                  </button>
-                                )}
-                                <button onClick={() => handleDeleteSchedule(sch.id)} className="text-red-300 hover:text-red-500 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"><X size={15} /></button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            </div>
+                          </div>
+                          
+                          {/* Progress Badges */}
+                          <div className="mb-4">
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5">진행 관리</p>
+                            <div className="flex gap-1.5 flex-wrap">
+                               {BUILTIN_PROGRESS.map(p => {
+                                 const label = processSettings.progressLabels[p.id] ?? p.defaultLabel;
+                                 const checked = sch.progressCheck?.[p.id as keyof FranchiseSchedule['progressCheck']] || false;
+                                 return (
+                                   <button
+                                     key={p.id}
+                                     onClick={() => handleToggleProgress(sch.id, p.id as any, checked)}
+                                     className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors border ${checked ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-400' : 'border-slate-200 bg-slate-50 text-slate-400 dark:border-slate-700 dark:bg-slate-800/50'}`}
+                                     title={label}
+                                   >
+                                     <CheckCircle2 size={12} className={checked ? '' : 'opacity-30'} />
+                                     <span className="text-[10px] font-bold">{label}</span>
+                                   </button>
+                                 );
+                               })}
+                               {processSettings.customItems.map(ci => {
+                                 const checked = (sch as any).customProgressCheck?.[ci.id] || false;
+                                 return (
+                                   <button
+                                     key={ci.id}
+                                     onClick={async () => {
+                                       await updateDoc(doc(db, 'franchise_schedules', sch.id), {
+                                         [`customProgressCheck.${ci.id}`]: !checked,
+                                       });
+                                       fetchData();
+                                     }}
+                                     className={`flex items-center gap-1 px-2 py-1 rounded-md transition-colors border ${checked ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400' : 'border-slate-200 bg-slate-50 text-slate-400 dark:border-slate-700 dark:bg-slate-800/50'}`}
+                                     title={ci.label}
+                                   >
+                                     <CheckCircle2 size={12} className={checked ? '' : 'opacity-30'} />
+                                     <span className="text-[10px] font-bold">{ci.label}</span>
+                                   </button>
+                                 );
+                               })}
+                            </div>
+                          </div>
+
+                          {/* Info Grid */}
+                          <div className="mt-auto bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 space-y-2 text-xs">
+                             <div className="flex justify-between items-center">
+                               <span className="text-slate-500 dark:text-slate-400">가스 구분</span>
+                               <span className="font-semibold text-slate-700 dark:text-slate-300">{sch.gasType || '-'}</span>
+                             </div>
+                             <div className="flex justify-between items-start">
+                               <span className="text-slate-500 dark:text-slate-400 mt-0.5">공사/입고</span>
+                               <div className="text-right font-medium text-slate-600 dark:text-slate-400">
+                                 <div>S: {sch.constructionStart || '-'} / E: {sch.constructionEnd || '-'}</div>
+                                 <div className="mt-0.5">🔥: {sch.ovenIn || '-'} / 📦: {sch.initialStockIn || '-'}</div>
+                               </div>
+                             </div>
+                             <div className="flex justify-between items-start">
+                               <span className="text-slate-500 dark:text-slate-400 mt-0.5">사전/본 교육</span>
+                               <div className="text-right">
+                                 <div className="font-bold text-slate-700 dark:text-slate-300">{sch.preTrainingStart || '-'} ({sch.preTrainingDays || 0}일)</div>
+                                 <div className="text-[10px] text-slate-400 mb-0.5">📍 {sch.preTrainingLocation || '-'}</div>
+                                 <div className="font-medium text-slate-600 dark:text-slate-400">본: {sch.trainingStart || '-'} ~ {sch.trainingEnd || '-'}</div>
+                               </div>
+                             </div>
+                             <div className="flex justify-between items-center border-t border-slate-200 dark:border-slate-700 pt-2 mt-2">
+                               <span className="text-slate-500 dark:text-slate-400 font-bold">오픈일</span>
+                               <span className="text-sm font-black text-rose-500 font-mono">{sch.openDate || '-'}</span>
+                             </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                  </div>
               </div>
 

@@ -1007,7 +1007,7 @@ export default function App() {
                   ) : (
                     <button
                       onClick={() => navigateTo(brand.id, 'cost')}
-                      className={`flex-1 text-xs truncate ${sidebarCollapsed ? 'text-center font-bold' : 'text-left font-medium'} ${isActiveBrand ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}
+                      className={`flex-1 w-full text-xs truncate text-left ${sidebarCollapsed ? 'font-bold pl-1' : 'font-medium'} ${isActiveBrand ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}
                       title={sidebarCollapsed ? brand.name : undefined}
                     >
                       {sidebarCollapsed ? getShortBrandName(brand.name) : brand.name}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FranchiseSchedule, TeamSetting } from '../../types';
 import { isDateInRange, addDays } from '../../utils';
+import { Calendar as CalendarIcon, List } from 'lucide-react';
 
 // 💡 [Tailwind 완벽 해결] Tailwind 스캐너가 인식할 수 있도록 완성된 클래스명을 직접 매핑
 const BG_CLASSES: Record<string, string> = {
@@ -21,6 +22,10 @@ interface Props {
 }
 
 export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpdate, onEditStore, phaseVisibility = {} }: Props) {
+  // 💡 모바일(화면 너비 768px 미만)일 경우 기본값을 '리스트 뷰'로 설정
+  const [viewMode, setViewMode] = useState<'calendar' | 'list'>(
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 'list' : 'calendar'
+  );
   const isPhaseVisible = (id: string) => phaseVisibility[id] !== false; // 기본: 표시
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -102,7 +107,7 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
 
       if (isPhaseVisible('oven')) addEv('oven', '화덕', s.ovenIn, s.ovenEnd);
       if (isPhaseVisible('burner') && s.burnerIn === dateStr) addEv('burner', '화구', s.burnerIn, s.burnerIn);
-      if (isPhaseVisible('equipment') && s.equipmentIn === dateStr) addEv('equipment', '장비', s.equipmentIn, s.equipmentIn);
+      if (isPhaseVisible('equipment') && s.equipmentIn === dateStr) addEv('equipment', '화구입고', s.equipmentIn, s.equipmentIn);
       if (isPhaseVisible('guide') && s.ownerGuideStart === dateStr) addEv('guide', '안내', s.ownerGuideStart, s.ownerGuideStart);
 
       if (isPhaseVisible('preTraining')) addEv('preTraining', '사전', s.preTrainingStart, s.preTrainingEnd);
@@ -187,86 +192,160 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
     weeks.push(cells.slice(i, i+7));
   }
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const agendaDays = cells.filter(cell => cell.isCurrentMonth && getEventsForDate(cell.fullDate).length > 0);
+
   return (
-    <div className="relative">
+    <div className="relative flex flex-col h-full">
+      {/* 뷰 모드 토글 */}
+      <div className="flex justify-end mb-2">
+        <div className="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-lg">
+          <button onClick={() => setViewMode('calendar')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'calendar' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`} title="달력 보기">
+            <CalendarIcon size={14} />
+          </button>
+          <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`} title="리스트 보기">
+            <List size={14} />
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
-        <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-800">
-          {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
-            <div key={d} className={`p-3 text-center text-sm font-bold ${i === 0 ? 'text-rose-500' : i === 6 ? 'text-blue-500' : 'text-slate-600 dark:text-slate-300'}`}>
-               {d}
-            </div>
-          ))}
-        </div>
-        
-        <div className="flex flex-col">
-          {weeks.map((week, wIdx) => {
-            const weekEvents = week.map(cell => getEventsForDate(cell.fullDate)).flat();
-            const uniqueTracks: string[] = Array.from(new Set(weekEvents.map(e => `${e.scheduleId}_${e.phaseId}`))).sort() as string[];
-
-            return (
-              <div key={wIdx} className="grid grid-cols-7 min-h-[140px] border-b border-slate-100 dark:border-slate-800">
-                {week.map((cell, cIdx) => {
-                  const cellEvents = getEventsForDate(cell.fullDate);
-                  const evMap = cellEvents.reduce((acc, ev) => { acc[`${ev.scheduleId}_${ev.phaseId}`] = ev; return acc; }, {} as Record<string, any>);
-                  
-                  return (
-                    <div 
-                      key={cIdx} 
-                      className={`relative py-1 border-r border-slate-200 dark:border-slate-800 flex flex-col ${!cell.isCurrentMonth ? 'bg-slate-50 dark:bg-slate-800/20 opacity-50' : ''}`}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => handleDrop(e, cell.fullDate)}
-                    >
-                      <div className={`text-right px-2 text-xs font-bold mb-1 ${cell.isCurrentMonth ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'}`}>{cell.day}</div>
-                      <div className="flex-1 space-y-0.5 pb-1">
-                        {uniqueTracks.map((trackKey, tIdx) => {
-                           const ev = evMap[trackKey];
-                           if (!ev) {
-                              return <div key={`spacer-${trackKey}-${tIdx}`} className="h-[28px]" />;
-                           }
-                           
-                           const isLongBlock = ev.duration >= 3;
-                           const showStartText = ev.isActuallyStart || cIdx === 0;
-                           const showEndText = isLongBlock && ev.isActuallyEnd;
-
-                           const roundedCls = (ev.isActuallyStart ? 'rounded-l-lg' : '') + ' ' + (ev.isActuallyEnd ? 'rounded-r-lg' : '');
-                           const borderCls = "border-y border-black/5";
-                           const leftBorder = ev.isActuallyStart ? "border-l border-black/10" : "";
-                           const rightBorder = ev.isActuallyEnd ? "border-r border-black/10" : "";
-
-                           return (
-                             <div 
-                               key={tIdx} 
-                               onClick={(e) => openEditPopup(e, ev)}
-                              className={`relative text-[12px] h-[28px] flex items-center shadow-none cursor-pointer hover:brightness-95 ${ev.bgClass} ${roundedCls} ${borderCls} ${leftBorder} ${rightBorder} transition-all leading-tight`} 
-                               title={`[${ev.team}][${ev.storeName}][${ev.phaseName}]`}
-                               draggable
-                               onDragStart={(e) => handleDragStart(e, ev.scheduleId, ev.phaseId, cell.fullDate, false)}
-                             >
-                                {showStartText && (
-                                  <div className="absolute left-0 top-0 bottom-0 flex items-center pl-2 whitespace-nowrap z-10 pointer-events-none overflow-visible">
-                                    <span className="text-slate-900 dark:text-white font-bold dark:drop-shadow-md text-[11px] tracking-tight">
-                                      [{ev.team}][{ev.storeName}][{ev.phaseName}]
-                                    </span>
-                                  </div>
-                                )}
-                                {showEndText && !showStartText && (
-                                  <div className="absolute right-0 top-0 bottom-0 flex items-center pr-2 whitespace-nowrap z-10 pointer-events-none overflow-visible">
-                                    <span className="text-slate-900 dark:text-white font-bold dark:drop-shadow-md text-[11px] tracking-tight">
-                                      [{ev.phaseName}]
-                                    </span>
-                                  </div>
-                                )}
-                             </div>
-                           );
-                        })}
-                      </div>
+        {viewMode === 'list' ? (
+          <div className="p-4 max-h-[600px] overflow-y-auto">
+            {agendaDays.length === 0 ? (
+              <div className="text-center text-slate-400 py-10 font-medium">이번 달 일정이 없습니다.</div>
+            ) : (
+              agendaDays.map(cell => {
+                const events = getEventsForDate(cell.fullDate);
+                const dateObj = new Date(cell.fullDate);
+                const dayName = ['일','월','화','수','목','금','토'][dateObj.getDay()];
+                const isToday = cell.fullDate === todayStr;
+                
+                return (
+                  <div key={cell.fullDate} className="flex gap-3 mb-4 last:mb-0">
+                    <div className="w-10 shrink-0 flex flex-col items-center pt-1">
+                      <span className={`text-[10px] font-bold ${isToday ? 'text-blue-500' : 'text-slate-400'}`}>{dayName}</span>
+                      <span className={`text-lg font-black ${isToday ? 'text-blue-500' : 'text-slate-700 dark:text-slate-300'}`}>{cell.day}</span>
                     </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
+                    <div className="flex-1 space-y-2 border-l-2 border-slate-100 dark:border-slate-800 pl-4 pb-2">
+                      {events.map((ev, idx) => (
+                        <div key={idx} onClick={(e) => openEditPopup(e, ev)} className="relative p-3 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-all group overflow-hidden">
+                          {/* 좌측 강조 포인트 선 */}
+                          <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${ev.bgClass}`} />
+                          <div className="pl-1">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold text-white ${ev.bgClass}`}>{ev.phaseName}</span>
+                                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{ev.team}</span>
+                              </div>
+                              {ev.isActuallyStart && ev.duration > 1 && <span className="text-[10px] font-semibold text-slate-400">{ev.duration}일간</span>}
+                            </div>
+                            <div className="font-bold text-sm sm:text-base text-slate-800 dark:text-slate-100 group-hover:text-blue-600 transition-colors">
+                              {ev.storeName}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        ) : (
+          <div className="relative flex flex-col">
+            {/* 💡 캘린더 배경에 월 숫자 희미하게 표시 (워터마크) */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden select-none">
+              <span className="text-[200px] sm:text-[300px] md:text-[350px] font-black text-slate-200 dark:text-slate-800 opacity-60">
+                {month + 1}월
+              </span>
+            </div>
+            
+            {/* 💡 개선 1. 상단 요일 고정(Sticky) */}
+            <div className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md grid grid-cols-7 border-b border-slate-200 dark:border-slate-800 shadow-sm">
+              {['일', '월', '화', '수', '목', '금', '토'].map((d, i) => (
+                <div key={d} className={`p-3 text-center text-sm font-bold ${i === 0 ? 'text-rose-500' : i === 6 ? 'text-blue-500' : 'text-slate-600 dark:text-slate-300'}`}>
+                  {d}
+                </div>
+              ))}
+            </div>
+            
+            <div className="relative z-10 flex flex-col">
+              {weeks.map((week, wIdx) => {
+                const weekEvents = week.map(cell => getEventsForDate(cell.fullDate)).flat();
+                const uniqueTracks: string[] = Array.from(new Set(weekEvents.map(e => `${e.scheduleId}_${e.phaseId}`))).sort() as string[];
+
+                return (
+                  <div key={wIdx} className="grid grid-cols-7 min-h-[140px] border-b border-slate-100 dark:border-slate-800">
+                    {week.map((cell, cIdx) => {
+                      const cellEvents = getEventsForDate(cell.fullDate);
+                      const evMap = cellEvents.reduce((acc, ev) => { acc[`${ev.scheduleId}_${ev.phaseId}`] = ev; return acc; }, {} as Record<string, any>);
+                      const isToday = cell.fullDate === todayStr;
+                      
+                      return (
+                        <div 
+                          key={cIdx} 
+                          className={`relative py-1 flex flex-col ${!cell.isCurrentMonth ? 'bg-slate-50/50 dark:bg-slate-800/20 opacity-50' : ''} ${isToday ? 'ring-2 ring-rose-500 ring-inset bg-rose-50/30 dark:bg-rose-900/20 z-10' : 'border-r border-slate-200 dark:border-slate-800'}`}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => handleDrop(e, cell.fullDate)}
+                        >
+                          <div className="text-right px-1 pt-1 mb-1 flex justify-end">
+                            <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-full text-[11px] font-bold ${isToday ? 'text-rose-600 dark:text-rose-400' : cell.isCurrentMonth ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'}`}>
+                              {cell.day}
+                            </span>
+                          </div>
+                          <div className="flex-1 space-y-0.5 pb-1">
+                            {uniqueTracks.map((trackKey, tIdx) => {
+                              const ev = evMap[trackKey];
+                              if (!ev) {
+                                  return <div key={`spacer-${trackKey}-${tIdx}`} className="h-[28px]" />;
+                              }
+                              
+                              const isLongBlock = ev.duration >= 3;
+                              const showStartText = ev.isActuallyStart || cIdx === 0;
+                              const showEndText = isLongBlock && ev.isActuallyEnd;
+
+                              const roundedCls = (ev.isActuallyStart ? 'rounded-l-lg' : '') + ' ' + (ev.isActuallyEnd ? 'rounded-r-lg' : '');
+                              const borderCls = "border-y border-black/5";
+                              const leftBorder = ev.isActuallyStart ? "border-l border-black/10" : "";
+                              const rightBorder = ev.isActuallyEnd ? "border-r border-black/10" : "";
+
+                              return (
+                                <div 
+                                  key={tIdx} 
+                                  onClick={(e) => openEditPopup(e, ev)}
+                                  className={`relative text-[12px] h-[28px] flex items-center shadow-none cursor-pointer hover:brightness-95 ${ev.bgClass} ${roundedCls} ${borderCls} ${leftBorder} ${rightBorder} transition-all leading-tight`} 
+                                  title={`[${ev.team}][${ev.storeName}][${ev.phaseName}]`}
+                                  draggable
+                                  onDragStart={(e) => handleDragStart(e, ev.scheduleId, ev.phaseId, cell.fullDate, false)}
+                                >
+                                    {showStartText && (
+                                      <div className={`absolute top-0 bottom-0 flex items-center whitespace-nowrap z-20 pointer-events-none overflow-visible ${cIdx === 6 ? 'right-0 pr-1 sm:pr-2' : 'left-0 pl-1 sm:pl-2'}`}>
+                                        <span className="text-slate-900 dark:text-white font-bold dark:drop-shadow-md text-[10px] sm:text-[11px] tracking-tight">
+                                          [{ev.team}][{ev.storeName}][{ev.phaseName}]
+                                        </span>
+                                      </div>
+                                    )}
+                                    {showEndText && !showStartText && (
+                                      <div className="absolute right-0 top-0 bottom-0 flex items-center pr-1 sm:pr-2 whitespace-nowrap z-20 pointer-events-none overflow-visible">
+                                        <span className="text-slate-900 dark:text-white font-bold dark:drop-shadow-md text-[10px] sm:text-[11px] tracking-tight">
+                                          [{ev.phaseName}]
+                                        </span>
+                                      </div>
+                                    )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
