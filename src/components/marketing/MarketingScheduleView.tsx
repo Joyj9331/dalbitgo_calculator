@@ -1,13 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, where, updateDoc, doc } from 'firebase/firestore';
 import { reviewDb } from '../../firebase';
 import { MarketingSchedule } from '../../types';
 import { useToast } from '../Toast';
-import { Copy, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Copy, Clock, CheckCircle } from 'lucide-react';
+
+// ✅ Vercel 에러 방지: 기존 타입에 status 속성 추가 인정해주기
+interface ExtendedSchedule extends MarketingSchedule {
+  status?: string;
+}
 
 export function MarketingScheduleView({ activeBrand }: { activeBrand: string | null }) {
-  const [schedules, setSchedules] = useState<MarketingSchedule[]>([]);
+  const [schedules, setSchedules] = useState<ExtendedSchedule[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const toast = useToast();
 
   useEffect(() => {
@@ -17,9 +23,9 @@ export function MarketingScheduleView({ activeBrand }: { activeBrand: string | n
     }
 
     const unsub = onSnapshot(q, (snap) => {
-      const data: MarketingSchedule[] = [];
+      const data: ExtendedSchedule[] = [];
       snap.forEach(doc => {
-        data.push({ id: doc.id, ...doc.data() } as MarketingSchedule);
+        data.push({ id: doc.id, ...doc.data() } as ExtendedSchedule);
       });
       setSchedules(data);
       if (data.length > 0 && !selectedId) {
@@ -37,22 +43,48 @@ export function MarketingScheduleView({ activeBrand }: { activeBrand: string | n
     toast.success(`${platform} 텍스트가 클립보드에 복사되었습니다.`);
   };
 
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    try {
+      await updateDoc(doc(reviewDb, 'marketing_schedules', id), { status: newStatus });
+      toast.success('상태가 변경되었습니다.');
+    } catch (error) {
+      toast.error('상태 변경에 실패했습니다.');
+    }
+  };
+
+  const filteredSchedules = schedules.filter(s => {
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'pending') return s.status === 'pending' || !s.status;
+    return s.status === statusFilter;
+  });
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col lg:flex-row min-h-[600px]">
       
       {/* 리스트 패널 */}
       <div className="w-full lg:w-1/3 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-900">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-            <Clock size={16} className="text-blue-500" /> 보관된 스케줄 (총 {schedules.length}건)
-          </h3>
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <Clock size={16} className="text-blue-500" /> 보관된 원고 ({filteredSchedules.length}건)
+            </h3>
+          </div>
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+            {(['all', 'pending', 'completed'] as const).map(f => (
+              <button key={f} onClick={() => setStatusFilter(f)} className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-colors ${statusFilter === f ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                {f === 'all' ? '전체' : f === 'pending' ? '대기중' : '발행완료'}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {schedules.length === 0 ? (
+          {filteredSchedules.length === 0 ? (
              <div className="p-6 text-center text-sm text-slate-500">저장된 스케줄이 없습니다.</div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {schedules.map(item => (
+              {filteredSchedules.map(item => {
+                const isPending = item.status === 'pending' || !item.status;
+                return (
                 <button
                   key={item.id}
                   onClick={() => setSelectedId(item.id)}
@@ -60,13 +92,15 @@ export function MarketingScheduleView({ activeBrand }: { activeBrand: string | n
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="font-semibold text-sm text-slate-800 dark:text-slate-200">{item.storeName}</span>
-                    <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full">{item.status}</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isPending ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>
+                      {isPending ? '대기중' : '발행완료'}
+                    </span>
                   </div>
                   <div className="text-xs text-slate-500 dark:text-slate-400">
                     {new Date(item.createdAt).toLocaleString('ko-KR')}
                   </div>
                 </button>
-              ))}
+              )})}
             </div>
           )}
         </div>
@@ -76,9 +110,18 @@ export function MarketingScheduleView({ activeBrand }: { activeBrand: string | n
       <div className="w-full lg:w-2/3 p-6 flex flex-col bg-white dark:bg-slate-900">
         {selectedItem ? (
           <div className="flex-1 flex flex-col space-y-6">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white pb-4 border-b border-slate-100 dark:border-slate-800">
-              {selectedItem.storeName} 마케팅 원고
-            </h2>
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white">
+                {selectedItem.storeName} 마케팅 원고
+              </h2>
+              <div className="flex gap-2">
+                {(selectedItem.status === 'pending' || !selectedItem.status) ? (
+                  <button onClick={() => handleStatusChange(selectedItem.id, 'completed')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg transition-colors"><CheckCircle size={14}/> 발행 완료로 변경</button>
+                ) : (
+                  <button onClick={() => handleStatusChange(selectedItem.id, 'pending')} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-lg transition-colors"><Clock size={14}/> 대기중으로 변경</button>
+                )}
+              </div>
+            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 flex-1">
               {/* Naver */}

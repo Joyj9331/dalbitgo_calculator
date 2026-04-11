@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useToast } from '../Toast';
 import { GoogleGenAI } from '@google/genai';
-import { Clock, Image as ImageIcon, Send, Store, Info, LayoutTemplate } from 'lucide-react';
-import { db, reviewDb } from '../../firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { Clock, Image as ImageIcon, Send, Store, Info, LayoutTemplate, Sparkles, Edit2 } from 'lucide-react';
+import { reviewDb } from '../../firebase';
+import { collection, addDoc, onSnapshot } from 'firebase/firestore';
 
 export function MarketingGenerator({ activeBrand }: { activeBrand: string | null }) {
   const toast = useToast();
@@ -11,7 +11,8 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
 
   const [storeName, setStoreName] = useState('');
   const [storeType, setStoreType] = useState('기존 매장');
-  const [tone, setTone] = useState('① 전문적이고 신뢰감 있는');
+  const [targetPersona, setTargetPersona] = useState('가족 모임 (3050)');
+  const [tone, setTone] = useState('전문적/신뢰감');
   const [openTime, setOpenTime] = useState('11:00');
   const [closeTime, setCloseTime] = useState('21:30');
   const [parkingType, setParkingType] = useState('건물 내 주차');
@@ -21,6 +22,26 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   
   const [generatedResults, setGeneratedResults] = useState<{ n_text: string; i_text: string; d_text: string } | null>(null);
+
+  // ✅ 크롤링 데이터 연동용 상태
+  const [roiData, setRoiData] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
+
+  useEffect(() => {
+    const unsubRoi = onSnapshot(collection(reviewDb, 'roi_analysis'), snap => {
+      const data: any[] = [];
+      snap.forEach(d => data.push({ id: d.id, ...d.data() }));
+      setRoiData(data);
+    });
+    const unsubRev = onSnapshot(collection(reviewDb, 'reviews'), snap => {
+      const data: any[] = [];
+      snap.forEach(d => data.push({ id: d.id, ...d.data() }));
+      setReviews(data);
+    });
+    return () => { unsubRoi(); unsubRev(); };
+  }, []);
+
+  const allStores = Array.from(new Set([...roiData.map(r => r.매장명), ...reviews.map(r => r.매장명)])).sort() as string[];
 
   // Handle Review Files (with Canvas Blur)
   const handleReviewFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,6 +145,33 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
       toast.error('API 키가 설정되지 않았습니다. Vercel 환경변수에 VITE_GEMINI_API_KEY를 등록해주세요.');
       return;
     }
+    
+    // ✅ AI 연동용 매장 크롤링 데이터 추출
+    const storeRoi = roiData.find(r => r.매장명 === storeName);
+    const storeReviews = reviews.filter(r => r.매장명 === storeName);
+    
+    let targetKeywords = storeRoi && storeRoi.세팅된_키워드 !== '키워드 미설정' ? storeRoi.세팅된_키워드 : '';
+    const companions: Record<string, number> = {};
+    const reactions: Record<string, number> = {};
+    let topReactionNaver = '';
+    
+    storeReviews.forEach(r => {
+      if (r.동반자) r.동반자.split(',').forEach((c: string) => { const t = c.trim(); if(t) companions[t] = (companions[t] || 0) + 1; });
+      if (r.고객반응_포인트) r.고객반응_포인트.split(',').forEach((p: string) => { const t = p.trim(); if (t && t.toLowerCase() !== 'num' && isNaN(Number(t))) reactions[t] = (reactions[t] || 0) + 1; });
+      if (r.매장_TOP인기반응 && !topReactionNaver) topReactionNaver = r.매장_TOP인기반응;
+    });
+    
+    const topCompanions = Object.entries(companions).sort((a, b) => b[1] - a[1]).slice(0, 2).map(e => e[0]).join(', ');
+    const topReactions = Object.entries(reactions).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => `#${e[0]}`).join(' ');
+    
+    let aiContext = '';
+    if (targetKeywords || topCompanions || topReactions) {
+      aiContext = `\n\n[💡 크롤링 기반 매장 실제 데이터 (원고 작성 시 소구점으로 자연스럽게 녹여낼 것)]\n`;
+      if (targetKeywords) aiContext += `- 타겟 키워드: ${targetKeywords} (해시태그 및 본문에 활용)\n`;
+      if (topCompanions) aiContext += `- 주 방문 타겟층: ${topCompanions} (해당 타겟층의 공감을 이끌어내는 멘트 작성)\n`;
+      if (topReactions) aiContext += `- 고객 찐 반응 포인트: ${topReactions} (실제 방문객들이 극찬하는 매력 포인트 강조)\n`;
+      if (topReactionNaver && topReactionNaver !== '없음') aiContext += `- 네이버 통계: ${topReactionNaver}\n`;
+    }
 
     setLoading(true);
     try {
@@ -132,8 +180,8 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
       const promptStr = `당신은 F&B 프랜차이즈 전문 마케터입니다.
 
 [매장 정보]
-매장명: ${storeName} / 유형: ${storeType} / 톤: ${tone}
-영업시간: ${openTime}~${closeTime} / 주차: ${parkingType} / 이벤트: ${promoDetails}
+매장명: ${storeName} / 유형: ${storeType} / 타겟 고객층: ${targetPersona} / 글쓰기 톤: ${tone}
+영업시간: ${openTime}~${closeTime} / 주차: ${parkingType} / 이벤트: ${promoDetails}${aiContext}
 
 [이미지 분석 — 원고 작성 전 반드시 수행]
 첨부 이미지를 먼저 분석하라:
@@ -249,13 +297,24 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
             <div className="flex gap-4">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">매장명</label>
-                <input
-                  type="text"
-                  value={storeName}
-                  onChange={e => setStoreName(e.target.value)}
-                  placeholder="예: 전주본점"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+                {allStores.length > 0 ? (
+                  <select
+                    value={storeName}
+                    onChange={e => setStoreName(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">매장을 선택하세요</option>
+                    {allStores.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                ) : (
+                  <input type="text" value={storeName} onChange={e => setStoreName(e.target.value)} placeholder="예: 전주본점" className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-blue-500" />
+                )}
+                
+                {storeName && (roiData.some(r => r.매장명 === storeName) || reviews.some(r => r.매장명 === storeName)) && (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1.5 flex items-center gap-1">
+                    <Sparkles size={12} /> 크롤링 데이터가 AI 프롬프트에 연동됩니다.
+                  </p>
+                )}
               </div>
               <div className="flex-1">
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">매장 유형</label>
@@ -266,14 +325,27 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">톤앤매너 선택</label>
-              <select value={tone} onChange={e => setTone(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-blue-500">
-                <option>① 전문적이고 신뢰감 있는</option>
-                <option>② 친근한 이웃 말투</option>
-                <option>③ 감성적이고 부드러운</option>
-                <option>④ 파이팅 넘치는 홍보형</option>
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">타겟 고객층 (페르소나)</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['가족 모임 (3050)', '데이트 (2030)', '직장인/회식', '혼밥/일상', '타겟 제한 없음'].map(p => (
+                    <button key={p} onClick={() => setTargetPersona(p)} className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${targetPersona === p ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">글쓰기 톤앤매너</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['전문적/신뢰감', '친근한 이웃', '감성적/부드러움', '유쾌/파이팅'].map(t => (
+                    <button key={t} onClick={() => setTone(t)} className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${tone === t ? 'bg-purple-50 border-purple-500 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700'}`}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -345,7 +417,12 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
 
       {/* 결과 영역 */}
       <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col">
-        <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">결과 확인 및 시뮬레이션</h3>
+        <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4">
+          결과 확인 및 시뮬레이션
+          <span className="text-[10px] font-normal bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800 flex items-center gap-1">
+            <Edit2 size={10} /> 직접 수정 가능
+          </span>
+        </h3>
         
         {generatedResults ? (
           <div className="space-y-6 flex-1 overflow-auto">
@@ -353,7 +430,7 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
                <div className="flex items-center justify-between mb-2">
                  <span className="text-sm font-bold text-green-600">네이버 블로그 원고</span>
                </div>
-               <pre className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-sans bg-slate-50 dark:bg-slate-950 p-4 rounded-lg">{generatedResults.n_text}</pre>
+               <textarea value={generatedResults.n_text} onChange={e => setGeneratedResults({ ...generatedResults, n_text: e.target.value })} className="w-full min-h-[300px] resize-y whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-sans bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all" />
              </div>
 
              <div className="grid grid-cols-2 gap-4">
@@ -361,13 +438,13 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
                  <div className="flex items-center justify-between mb-2">
                    <span className="text-sm font-bold text-pink-500">인스타그램</span>
                  </div>
-                 <pre className="whitespace-pre-wrap text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans bg-slate-50 dark:bg-slate-950 p-3 rounded-lg overflow-hidden text-ellipsis">{generatedResults.i_text}</pre>
+                 <textarea value={generatedResults.i_text} onChange={e => setGeneratedResults({ ...generatedResults, i_text: e.target.value })} className="w-full min-h-[200px] resize-y whitespace-pre-wrap text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all" />
                </div>
                <div className="bg-white dark:bg-slate-900 rounded-lg p-4 shadow-sm border border-slate-200 dark:border-slate-700">
                  <div className="flex items-center justify-between mb-2">
                    <span className="text-sm font-bold text-orange-500">당근마켓(Daangn)</span>
                  </div>
-                 <pre className="whitespace-pre-wrap text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans bg-slate-50 dark:bg-slate-950 p-3 rounded-lg overflow-hidden text-ellipsis">{generatedResults.d_text}</pre>
+                 <textarea value={generatedResults.d_text} onChange={e => setGeneratedResults({ ...generatedResults, d_text: e.target.value })} className="w-full min-h-[200px] resize-y whitespace-pre-wrap text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-transparent focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all" />
                </div>
              </div>
 
