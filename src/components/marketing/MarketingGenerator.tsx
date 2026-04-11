@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useToast } from '../Toast';
 import { GoogleGenAI } from '@google/genai';
-import { Clock, Image as ImageIcon, Send, Store, Info, LayoutTemplate, Sparkles, Edit2 } from 'lucide-react';
+import { Clock, Image as ImageIcon, Send, Store, Info, LayoutTemplate, Sparkles, Edit2, Download } from 'lucide-react';
 import { reviewDb } from '../../firebase';
 import { collection, addDoc, onSnapshot } from 'firebase/firestore';
 
@@ -22,6 +22,7 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   
   const [generatedResults, setGeneratedResults] = useState<{ n_text: string; i_text: string; d_text: string } | null>(null);
+  const [collageUrl, setCollageUrl] = useState<string | null>(null);
 
   // ✅ 크롤링 데이터 연동용 상태
   const [roiData, setRoiData] = useState<any[]>([]);
@@ -42,6 +43,77 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
   }, []);
 
   const allStores = Array.from(new Set([...roiData.map(r => r.매장명), ...reviews.map(r => r.매장명)])).sort() as string[];
+
+  // ✅ 리뷰 콜라주(겹침+모자이크) 자동 생성 로직
+  useEffect(() => {
+    if (reviewFiles.length === 0) {
+      setCollageUrl(null);
+      return;
+    }
+
+    const generateCollage = async () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const imgs = await Promise.all(reviewFiles.map(file => {
+        return new Promise<HTMLImageElement>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.src = e.target?.result as string;
+          }
+          reader.readAsDataURL(file);
+        });
+      }));
+
+      const CANVAS_WIDTH = 1080; // 인스타 권장 가로 사이즈
+      const PADDING = 40;
+      const SPACING = -60; // 겹침 정도 (음수로 설정하여 위로 겹치게 함)
+
+      const scaledImages = imgs.map(img => {
+        const scale = (CANVAS_WIDTH - PADDING * 2) / img.width;
+        return { img, width: CANVAS_WIDTH - PADDING * 2, height: img.height * scale };
+      });
+
+      const positions: number[] = [];
+      let currentY = PADDING;
+      for (let i = 0; i < scaledImages.length; i++) {
+        positions.push(currentY);
+        currentY += scaledImages[i].height + SPACING;
+      }
+
+      canvas.width = CANVAS_WIDTH;
+      canvas.height = currentY - SPACING + PADDING;
+
+      ctx.fillStyle = '#f8fafc'; // 깔끔한 연한 배경
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // 역순으로 그려서 윗 리뷰가 아래 리뷰의 닉네임 부분을 자연스럽게 덮도록 처리
+      for (let i = scaledImages.length - 1; i >= 0; i--) {
+        const si = scaledImages[i];
+        const y = positions[i];
+
+        // 그림자 효과 부여 (입체감)
+        ctx.shadowColor = 'rgba(0,0,0,0.15)';
+        ctx.shadowBlur = 25;
+        ctx.shadowOffsetY = 12;
+        ctx.drawImage(si.img, PADDING, y, si.width, si.height);
+        ctx.shadowColor = 'transparent';
+
+        // 상단 15% 블러 처리 (닉네임 확실하게 모자이크)
+        const blurHeight = Math.floor(si.height * 0.15);
+        ctx.filter = 'blur(15px)';
+        ctx.drawImage(canvas, PADDING, y, si.width, blurHeight, PADDING, y, si.width, blurHeight);
+        ctx.filter = 'none';
+      }
+
+      setCollageUrl(canvas.toDataURL('image/jpeg', 0.8)); // DB 용량 최적화를 위해 압축률 0.8 적용
+    };
+
+    generateCollage();
+  }, [reviewFiles]);
 
   // Handle Review Files (with Canvas Blur)
   const handleReviewFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -275,6 +347,7 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
         naverText: generatedResults.n_text,
         instaText: generatedResults.i_text,
         daangnText: generatedResults.d_text,
+        collageUrl: collageUrl || null,
         status: '대기중',
         createdAt: new Date().toISOString()
       });
@@ -380,26 +453,39 @@ export function MarketingGenerator({ activeBrand }: { activeBrand: string | null
           <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4">
             <ImageIcon className="text-amber-500" size={20} /> 사진 업로드
           </h3>
-          <div className="space-y-4">
-            <div className="p-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50 relative overflow-hidden group">
-              <input type="file" multiple accept="image/*" onChange={handleReviewFilesChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-              <div className="text-center">
-                <LayoutTemplate className="mx-auto h-8 w-8 text-slate-400 group-hover:text-blue-500 transition-colors" />
-                <p className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-300">고객 리뷰 캡처</p>
-                <p className="text-xs text-slate-400 mt-1">네이버·구글·배달앱 리뷰 화면 캡처</p>
-                <p className="text-xs text-slate-400">AI가 긍정 키워드 추출 · 닉네임 자동 모자이크</p>
-                <p className="text-xs text-blue-500 font-medium mt-1.5">{reviewFiles.length > 0 ? `${reviewFiles.length}장 선택됨` : '클릭하여 업로드'}</p>
+          <div className="space-y-6">
+            
+            <div className="space-y-3">
+              <div className="p-4 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 relative overflow-hidden group hover:bg-blue-50 transition-colors">
+                <input type="file" multiple accept="image/*" onChange={handleReviewFilesChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                <div className="text-center">
+                  <LayoutTemplate className="mx-auto h-8 w-8 text-blue-400 group-hover:text-blue-600 transition-colors" />
+                  <p className="mt-2 text-sm font-bold text-slate-800 dark:text-slate-200">1️⃣ 고객 리뷰 캡처 (필수)</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">리뷰 2장 이상 첨부 시, 닉네임이 모자이크된 <span className="font-bold text-blue-600">SNS용 겹침 콜라주</span>를 자동 생성합니다.</p>
+                  <p className="text-xs text-blue-600 font-bold mt-2 bg-blue-100 dark:bg-blue-900/40 inline-block px-3 py-1 rounded-full">{reviewFiles.length > 0 ? `${reviewFiles.length}장 선택됨` : '여기를 클릭하여 리뷰 사진 업로드'}</p>
+                </div>
               </div>
+              
+              {collageUrl && (
+                <div className="relative group/collage rounded-xl overflow-hidden border border-indigo-200 dark:border-indigo-800 shadow-sm bg-indigo-50/50 dark:bg-indigo-900/10 flex flex-col items-center p-4">
+                  <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-3 text-left w-full flex items-center gap-1.5"><Sparkles size={14}/> 자동 생성된 리뷰 콜라주 이미지 (스케줄러 저장 시 함께 저장됨)</p>
+                  <div className="w-full max-h-64 overflow-y-auto rounded border border-indigo-100 dark:border-indigo-800/50 shadow-inner">
+                    <img src={collageUrl} alt="콜라주 미리보기" className="w-full" />
+                  </div>
+                  <a href={collageUrl} download="review_collage.jpg" className="mt-4 w-full px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold shadow-md flex items-center justify-center gap-2 transition-colors">
+                     <Download size={16} /> 콜라주 썸네일 이미지 다운로드
+                  </a>
+                </div>
+              )}
             </div>
             
-            <div className="p-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50 relative overflow-hidden group">
+            <div className="p-4 border-2 border-dashed border-emerald-300 dark:border-emerald-700 rounded-xl bg-emerald-50/50 dark:bg-emerald-900/10 relative overflow-hidden group hover:bg-emerald-50 transition-colors">
               <input type="file" multiple accept="image/*" onChange={handlePhotoFilesChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
               <div className="text-center">
-                <ImageIcon className="mx-auto h-8 w-8 text-slate-400 group-hover:text-blue-500 transition-colors" />
-                <p className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-300">대표 메뉴 · 매장 분위기 사진</p>
-                <p className="text-xs text-slate-400 mt-1">시그니처 메뉴, 매장 내·외부 사진 권장</p>
-                <p className="text-xs text-slate-400">AI가 색감·플레이팅·인테리어를 묘사에 반영</p>
-                <p className="text-xs text-blue-500 font-medium mt-1.5">{photoFiles.length > 0 ? `${photoFiles.length}장 선택됨` : '클릭하여 업로드'}</p>
+                <ImageIcon className="mx-auto h-8 w-8 text-emerald-400 group-hover:text-emerald-600 transition-colors" />
+                <p className="mt-2 text-sm font-bold text-slate-800 dark:text-slate-200">2️⃣ 매장/메뉴 실제 사진 (선택)</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">AI가 이 사진들을 보고 <span className="font-bold text-emerald-600">음식의 색감, 플레이팅, 매장 분위기</span>를 글에 생생하게 묘사합니다.</p>
+                <p className="text-xs text-emerald-600 font-bold mt-2 bg-emerald-100 dark:bg-emerald-900/40 inline-block px-3 py-1 rounded-full">{photoFiles.length > 0 ? `${photoFiles.length}장 선택됨` : '여기를 클릭하여 매장/메뉴 사진 업로드'}</p>
               </div>
             </div>
           </div>

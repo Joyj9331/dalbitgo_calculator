@@ -3,11 +3,12 @@ import { collection, onSnapshot, query, orderBy, where, updateDoc, doc } from 'f
 import { reviewDb } from '../../firebase';
 import { MarketingSchedule } from '../../types';
 import { useToast } from '../Toast';
-import { Copy, Clock, CheckCircle } from 'lucide-react';
+import { Copy, Clock, CheckCircle, Download, Image as ImageIcon } from 'lucide-react';
 
 // ✅ Vercel 에러 방지: 기존 타입에 status 속성 추가 인정해주기
 interface ExtendedSchedule extends MarketingSchedule {
   status?: string;
+  collageUrl?: string | null;
 }
 
 export function MarketingScheduleView({ activeBrand }: { activeBrand: string | null }) {
@@ -157,6 +158,19 @@ export function MarketingScheduleView({ activeBrand }: { activeBrand: string | n
                 </div>
               </div>
             </div>
+
+            {/* 저장된 콜라주 이미지가 있는 경우 표시 */}
+            {selectedItem.collageUrl && (
+              <div className="mt-6 flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="p-3 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                  <span className="font-bold text-sm text-indigo-600 flex items-center gap-1.5"><ImageIcon size={14}/> 저장된 리뷰 콜라주 이미지</span>
+                  <a href={selectedItem.collageUrl} download={`${selectedItem.storeName}_리뷰콜라주.jpg`} className="p-1 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 text-xs font-semibold transition-colors"><Download size={14}/> 다운로드</a>
+                </div>
+                <div className="p-4 flex items-center justify-center bg-slate-100 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 shadow-inner">
+                   <img src={selectedItem.collageUrl} alt="저장된 콜라주" className="max-h-[300px] object-contain rounded border border-slate-200 dark:border-slate-700 shadow-sm" />
+                </div>
+              </div>
+            )}
             
           </div>
         ) : (

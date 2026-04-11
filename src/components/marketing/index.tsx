@@ -41,11 +41,12 @@ export function MarketingDashboard({ activeBrand }: { activeBrand: string | null
         </div>
       </div>
 
-      {tab === 'generate' ? (
+      <div className={tab === 'generate' ? 'block' : 'hidden'}>
         <MarketingGenerator activeBrand={activeBrand} />
-      ) : (
+      </div>
+      <div className={tab === 'schedule' ? 'block' : 'hidden'}>
         <MarketingScheduleView activeBrand={activeBrand} />
-      )}
+      </div>
     </div>
   );
 }
