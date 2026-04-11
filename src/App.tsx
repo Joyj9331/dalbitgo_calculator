@@ -31,7 +31,7 @@ import {
   ArrowRight, Bell, Menu as MenuIcon, TriangleAlert, Bot, CalendarDays, ArrowUpRight, Sparkles, LayoutList
 } from 'lucide-react';
 import Papa from 'papaparse';
-import { calculateTotalCost, formatPercent, doesMenuContainIngredient } from './utils';
+import { calculateTotalCost, formatPercent, doesMenuContainIngredient, checkMenuAlert } from './utils';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import {
@@ -83,7 +83,7 @@ function HomePage({
 
   const totalMenus = menus.filter(m => !m.isArchived).length;
   const totalIngredients = ingredients.filter(i => !i.isArchived).length;
-  const alertMenus = menus.filter(m => m.hasAlert && !m.isArchived).length;
+  const alertMenus = menus.filter(m => (m.hasAlert || checkMenuAlert(m, ingredients, menus)) && !m.isArchived).length;
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const recentChanges = ingredientChanges.filter(c => new Date(c.timestamp) >= sevenDaysAgo).length;
@@ -1287,7 +1287,7 @@ export default function App() {
 
                   <div className="bg-white dark:bg-slate-900 shadow-sm rounded-b-xl overflow-hidden border border-t-0 border-slate-200 dark:border-slate-800">
                     {sidebar.costTab === '전체보기' ? (
-                      <OverviewTable menus={activeMenus} menuCategories={brandCategories} ingredients={brandIngredients} isAdmin={currentUser.role === 'admin'} visibleColumns={visibleColumns} onAcknowledgeAlert={handleAcknowledgeAlert} onNavigateToTab={(tab) => setSidebar(prev => ({ ...prev, costTab: tab as CostTabType }))} onToggleColumn={(column) => setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))} />
+                      <OverviewTable menus={activeMenus} menuCategories={brandCategories} ingredients={brandIngredients} isAdmin={currentUser.role === 'admin'} visibleColumns={visibleColumns} onAcknowledgeAlert={handleAcknowledgeAlert} onNavigateToTab={(tab) => setSidebar(prev => ({ ...prev, costTab: tab as CostTabType }))} onToggleColumn={(column) => setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))} onSaveRecipe={handleSaveRecipe} />
                     ) : sidebar.costTab === '메뉴 관리' ? (
                       <div className="p-4 sm:p-6">
                         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
@@ -1342,7 +1342,7 @@ export default function App() {
                     ) : sidebar.costTab === '변동사항' ? (
                       <IngredientChangeView changes={brandChanges} ingredients={brandIngredients} currentUser={currentUser} onDeleteChange={handleDeleteChange} />
                     ) : (
-                      <MenuTable menus={activeMenus} menuCategories={brandCategories} ingredients={brandIngredients} region={sidebar.costTab as Region} visibleColumns={visibleColumns} onEditMenu={(menu) => { setEditingMenu(menu); setIsMenuModalOpen(true); }} onArchiveMenu={handleArchiveMenu} onEditRecipe={(menu) => { setRecipeMenu(menu); setIsRecipeModalOpen(true); }} isAdmin={currentUser.role === 'admin'} onAcknowledgeAlert={handleAcknowledgeAlert} onNavigateToTab={(tab) => setSidebar(prev => ({ ...prev, costTab: tab as CostTabType }))} onReorderMenu={handleReorderMenu} onToggleMenuVisibility={handleToggleMenuVisibility} onToggleColumn={(column) => setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))} />
+                      <MenuTable menus={activeMenus} menuCategories={brandCategories} ingredients={brandIngredients} region={sidebar.costTab as Region} visibleColumns={visibleColumns} onEditMenu={(menu) => { setEditingMenu(menu); setIsMenuModalOpen(true); }} onArchiveMenu={handleArchiveMenu} onEditRecipe={(menu) => { setRecipeMenu(menu); setIsRecipeModalOpen(true); }} isAdmin={currentUser.role === 'admin'} onAcknowledgeAlert={handleAcknowledgeAlert} onNavigateToTab={(tab) => setSidebar(prev => ({ ...prev, costTab: tab as CostTabType }))} onReorderMenu={handleReorderMenu} onToggleMenuVisibility={handleToggleMenuVisibility} onToggleColumn={(column) => setVisibleColumns(prev => ({ ...prev, [column]: !prev[column] }))} onSaveRecipe={handleSaveRecipe} />
                     )}
                   </div>
                 </>
