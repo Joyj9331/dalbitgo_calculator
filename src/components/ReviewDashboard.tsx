@@ -230,7 +230,10 @@ function OverviewTab({ reviews, reviewState, onResolve, onOverride }: {
     reviews.forEach(r => {
       if (r.동반자) r.동반자.split(',').forEach(c => { const t = c.trim(); if(t) companions[t] = (companions[t] || 0) + 1; });
       if (r.방문시간) r.방문시간.split(',').forEach(t => { const v = t.trim(); if(v) times[v] = (times[v] || 0) + 1; });
-      if (r.고객반응_포인트) r.고객반응_포인트.split(',').forEach(p => { const t = p.trim(); if(t) reactions[t] = (reactions[t] || 0) + 1; });
+      if (r.고객반응_포인트) r.고객반응_포인트.split(',').forEach(p => { 
+        const t = p.trim(); 
+        if (t && t.toLowerCase() !== 'num' && isNaN(Number(t))) reactions[t] = (reactions[t] || 0) + 1; 
+      });
     });
 
     return {
@@ -324,9 +327,12 @@ function OverviewTab({ reviews, reviewState, onResolve, onOverride }: {
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {review.방문시간 && <span className="px-2 py-0.5 bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] font-medium rounded">{review.방문시간}</span>}
                         {review.동반자 && <span className="px-2 py-0.5 bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 text-[10px] font-medium rounded">{review.동반자}</span>}
-                        {review.고객반응_포인트 && review.고객반응_포인트.split(',').map((pt, i) => (
-                          pt.trim() && <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-[10px] font-medium rounded border border-slate-200 dark:border-slate-700">#{pt.trim()}</span>
-                        ))}
+                        {review.고객반응_포인트 && review.고객반응_포인트.split(',').map((pt, i) => {
+                          const t = pt.trim();
+                          return t && t.toLowerCase() !== 'num' && isNaN(Number(t)) ? (
+                            <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 text-[10px] font-medium rounded border border-slate-200 dark:border-slate-700">#{t}</span>
+                          ) : null;
+                        })}
                       </div>
                     )}
                     <div className="flex gap-2">
@@ -491,7 +497,10 @@ function StoreTab({ reviews }: { reviews: Review[] }) {
   const reactionCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     storeReviews.forEach(r => {
-      if (r.고객반응_포인트) r.고객반응_포인트.split(',').forEach(p => { const t = p.trim(); if(t) counts[t] = (counts[t] || 0) + 1; });
+      if (r.고객반응_포인트) r.고객반응_포인트.split(',').forEach(p => { 
+        const t = p.trim(); 
+        if (t && t.toLowerCase() !== 'num' && isNaN(Number(t))) counts[t] = (counts[t] || 0) + 1; 
+      });
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
   }, [storeReviews]);
@@ -644,7 +653,12 @@ function StoreTab({ reviews }: { reviews: Review[] }) {
                         <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{review.리뷰내용}</p>
                         {review.고객반응_포인트 && (
                           <div className="flex flex-wrap gap-1 mt-2">
-                            {review.고객반응_포인트.split(',').map((pt, i) => pt.trim() && <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[10px] rounded-full border border-slate-200 dark:border-slate-700">#{pt.trim()}</span>)}
+                            {review.고객반응_포인트.split(',').map((pt, i) => {
+                              const t = pt.trim();
+                              return t && t.toLowerCase() !== 'num' && isNaN(Number(t)) ? (
+                                <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 text-[10px] rounded-full border border-slate-200 dark:border-slate-700">#{t}</span>
+                              ) : null;
+                            })}
                           </div>
                         )}
                       </div>
