@@ -366,10 +366,15 @@ export function FranchiseScheduleView({ brandId }: Props) {
     };
     
     if (chatStep === 5) { const d = parseDates(rawInput); if (d) applyDraft('constructionStart', d.start, 'constructionEnd', d.end); }
-    if (chatStep === 6) { const d = parseDates(rawInput); if (d) applyDraft('ovenIn', d.start, 'equipmentIn', d.end); }
-    if (chatStep === 7) { const d = parseDates(rawInput); if (d) applyDraft('preTrainingStart', d.start, 'preTrainingEnd', d.end); }
-    if (chatStep === 9) { const d = parseDates(rawInput); if (d) applyDraft('trainingStart', d.start, 'trainingEnd', d.end); }
-    if (chatStep === 10) { const d = parseDates(rawInput); if (d) applyDraft('initialStockIn', d.start, 'openDate', d.end); }
+    if (chatStep === 6 && rawInput !== '엔터 (패스)') newDraft.constructionType = rawInput;
+    if (chatStep === 7 && rawInput !== '엔터 (패스)') newDraft.signageType = rawInput;
+    if (chatStep === 8) { const d = parseDates(rawInput); if (d) applyDraft('ovenIn', d.start, 'ovenEnd', d.start); }
+    if (chatStep === 9) { const d = parseDates(rawInput); if (d) applyDraft('equipmentIn', d.start, 'equipmentIn', d.start); }
+    if (chatStep === 10) { const d = parseDates(rawInput); if (d) applyDraft('preTrainingStart', d.start, 'preTrainingEnd', d.end); }
+    if (chatStep === 12) { const d = parseDates(rawInput); if (d) applyDraft('trainingStart', d.start, 'trainingEnd', d.end); }
+    if (chatStep === 13) { const d = parseDates(rawInput); if (d) applyDraft('initialStockIn', d.start, 'initialStockEnd', d.start); }
+    if (chatStep === 14) { const d = parseDates(rawInput); if (d) applyDraft('ownerGuideStart', d.start, 'ownerGuideStart', d.start); }
+    if (chatStep === 15) { const d = parseDates(rawInput); if (d) applyDraft('openDate', d.start, 'openDate', d.start); }
     
     setDraftData(newDraft);
 
@@ -399,12 +404,15 @@ export function FranchiseScheduleView({ brandId }: Props) {
          setChatStep(22);
          let oldStr = '';
          if (updateField === '공사') oldStr = `${newDraft.constructionStart||'-'} ~ ${newDraft.constructionEnd||'-'}`;
-         else if (updateField === '화덕/화구') oldStr = `화덕: ${newDraft.ovenIn||'-'}, 화구: ${newDraft.equipmentIn||'-'}`;
+         else if (updateField === '화덕') oldStr = `화덕: ${newDraft.ovenIn||'-'}`;
+         else if (updateField === '화구') oldStr = `화구: ${newDraft.equipmentIn||'-'}`;
          else if (updateField === '사전교육') oldStr = `${newDraft.preTrainingStart||'-'} ~ ${newDraft.preTrainingEnd||'-'}`;
          else if (updateField === '본사교육') oldStr = `${newDraft.trainingStart||'-'} ~ ${newDraft.trainingEnd||'-'}`;
-         else if (updateField === '초도/오픈') oldStr = `초도: ${newDraft.initialStockIn||'-'}, 오픈: ${newDraft.openDate||'-'}`;
+         else if (updateField === '초도물품') oldStr = `초도물품: ${newDraft.initialStockIn||'-'}`;
+         else if (updateField === '점주안내') oldStr = `점주안내: ${newDraft.ownerGuideStart||'-'}`;
+         else if (updateField === '오픈일') oldStr = `오픈일: ${newDraft.openDate||'-'}`;
 
-         let newStr = (updateField === '화덕/화구' || updateField === '초도/오픈') ? `${d.start} / ${d.end}` : (d.start === d.end ? d.start : `${d.start} ~ ${d.end}`);
+         let newStr = d.start === d.end ? d.start : `${d.start} ~ ${d.end}`;
          setTimeout(() => setChatMessages(prev => [...prev, { role: 'bot', text: `[${newDraft.storeName}] ${updateField} 일정을 아래와 같이 변경할까요?\n\n기존: ${oldStr}\n변경: ${newStr}` }]), 300);
          return;
       }
@@ -413,10 +421,13 @@ export function FranchiseScheduleView({ brandId }: Props) {
              const d = updateDates;
              if (d) {
                if (updateField === '공사') { newDraft.constructionStart = d.start; newDraft.constructionEnd = d.end || d.start; }
-               else if (updateField === '화덕/화구') { newDraft.ovenIn = d.start; newDraft.equipmentIn = d.end || d.start; }
+               else if (updateField === '화덕') { newDraft.ovenIn = d.start; newDraft.ovenEnd = d.start; }
+               else if (updateField === '화구') { newDraft.equipmentIn = d.start; }
                else if (updateField === '사전교육') { newDraft.preTrainingStart = d.start; newDraft.preTrainingEnd = d.end || d.start; }
                else if (updateField === '본사교육') { newDraft.trainingStart = d.start; newDraft.trainingEnd = d.end || d.start; }
-               else if (updateField === '초도/오픈') { newDraft.initialStockIn = d.start; newDraft.openDate = d.end || d.start; }
+               else if (updateField === '초도물품') { newDraft.initialStockIn = d.start; newDraft.initialStockEnd = d.start; }
+               else if (updateField === '점주안내') { newDraft.ownerGuideStart = d.start; }
+               else if (updateField === '오픈일') { newDraft.openDate = d.start; }
              }
              setDraftData(newDraft);
              setPendingAiData(newDraft);
@@ -434,7 +445,7 @@ export function FranchiseScheduleView({ brandId }: Props) {
     let nextStep = chatStep + 1;
     // 💡 핵심 분기: 자동 계산 모드면 5번(공사일) 질문 이후 바로 12번(종료)으로 스킵!
     if (chatStep === 5 && isAutoCalc) {
-      nextStep = 12;
+      nextStep = 16;
     }
 
     if (nextStep < CHAT_QUESTIONS.length) {
@@ -470,9 +481,7 @@ export function FranchiseScheduleView({ brandId }: Props) {
 1. 첫 번째 답변을 분석하여 "CREATE" 또는 "UPDATE"로 'action' 값을 정확히 설정하세요.
 2. 오늘 날짜는 ${todayStr} 입니다. 사용자가 '0410', '410' 등 3~4자리 숫자로 날짜를 입력하면 올해(또는 다가오는) 월/일로 간주하여 정확한 YYYY-MM-DD 형식으로 변환하세요. '내일', '다음주 월요일' 등도 동일하게 변환하세요.
 3. 정보가 누락되었거나 '패스', '진행 안함'이라고 대답한 항목은 절대 억지로 지어내지 말고 반드시 빈 문자열("")로 비워두세요.
-4. '화덕 입고일 / 화구류 입고일' 답변에 날짜가 2개(범위) 있으면, 앞 날짜가 화덕 입고일(ovenIn)이고 뒤 날짜가 화구류 입고일(equipmentIn)입니다.
-5. '초도물품 입고일 / 그랜드 오픈일' 답변에 날짜가 2개 있으면, 앞 날짜가 초도물품 입고일(initialStockIn)이고 뒤 날짜가 그랜드 오픈일(openDate)입니다.
-6. 마크다운 기호 없이 오직 순수 JSON 객체 1개만 반환하세요.
+4. 마크다운 기호 없이 오직 순수 JSON 객체 1개만 반환하세요.
 
 [출력 JSON 포맷]
 {
@@ -935,7 +944,7 @@ ${transcript}`;
                 );
                 if (chatStep === 20) return (
                   <div className="flex flex-wrap gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                    {['공사', '화덕/화구', '사전교육', '본사교육', '초도/오픈'].map(f => (
+                    {['공사', '화덕', '화구', '사전교육', '본사교육', '초도물품', '점주안내', '오픈일'].map(f => (
                       <button key={f} onClick={() => submitChat(f)} className="flex-1 min-w-[100px] py-3 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 hover:bg-indigo-100 rounded-xl font-bold transition-colors shadow-sm">{f} 일정</button>
                     ))}
                   </div>
@@ -976,7 +985,28 @@ ${transcript}`;
                     <button onClick={() => submitChat(chatInput || '선택 안함')} className="w-20 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-sm">선택</button>
                   </div>
                 );
-                if ([5, 6, 7, 9, 10].includes(chatStep) && !pendingAiData && !isAiProcessing) return (
+                if (chatStep === 6) return (
+                  <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                    <select value={chatInput || ''} onChange={e => setChatInput(e.target.value)} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
+                      <option value="">공사업체 선택 (또는 패스)</option>
+                      <option value="더원">더원</option>
+                      <option value="감리">감리</option>
+                      <option value="직접입력">직접입력</option>
+                    </select>
+                    <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-sm">선택</button>
+                  </div>
+                );
+                if (chatStep === 7) return (
+                  <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                    <select value={chatInput || ''} onChange={e => setChatInput(e.target.value)} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
+                      <option value="">간판업체 선택 (또는 패스)</option>
+                      <option value="동영">동영</option>
+                      <option value="직접">직접</option>
+                    </select>
+                    <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-sm">선택</button>
+                  </div>
+                );
+                if ([5, 8, 9, 10, 12, 13, 14, 15].includes(chatStep) && !pendingAiData && !isAiProcessing) return (
                   <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">{renderMiniCalendar()}</div>
                 );
                 return (
