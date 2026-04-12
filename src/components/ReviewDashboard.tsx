@@ -940,15 +940,45 @@ function CompetitorTab({ competitorData }: { competitorData: CompetitorData[] })
   const latestData = competitorData.filter(c => c.수집일자 === latestDate);
   const prevData = competitorData.filter(c => c.수집일자 === prevDate);
 
-ㅣ   function getMackerelPrice(menuStr: string): number {
-    if (!menuStr || menuStr === '수집 실패') return 0;
-    for (const item of menuStr.split('|')) {
-      if (item.includes('고등어')) {
-        const parts = item.split(':');
-        const priceText = parts.length > 1 ? parts[1] : item;
-        const numStr = priceText.replace(/[^0-9]/g, '');
+  // 💡 [핵심 픽스] 깃 충돌로 날아갔던 수동 입력 호환 파서 복구! (저장 시 500 에러도 자동 해결됨)
+  function parseMenuString(menuStr: string): { name: string; price: string }[] {
+    if (!menuStr || menuStr === '수집 실패') return [];
+    const normalizedStr = menuStr.replace(/\n/g, '|');
+    const items = normalizedStr.split('|').map(s => s.trim()).filter(Boolean);
+    
+    const result: { name: string; price: string }[] = [];
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.includes(':')) {
+        const [name, ...priceArr] = item.split(':');
+        result.push({ name: name.trim(), price: priceArr.join(':').trim() });
+      } else {
+        if (i + 1 < items.length && /[0-9,]+\s*원/.test(items[i + 1])) {
+          result.push({ name: item, price: items[i + 1] });
+          i++;
+        } else {
+          const match = item.match(/([0-9]{1,2}(?:,[0-9]{3})+|[0-9]{4,5})\s*원?/);
+          if (match) {
+            const price = match[0];
+            const name = item.replace(price, '').trim();
+            result.push({ name, price });
+          } else {
+            result.push({ name: item, price: '' });
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  function getMackerelPrice(menuStr: string): number {
+    const parsed = parseMenuString(menuStr);
+    for (const { name, price } of parsed) {
+      if (name.includes('고등어')) {
+        const numStr = price.replace(/[^0-9]/g, '');
         const v = parseInt(numStr, 10);
-        if (!isNaN(v) && v > 0 && v <= 20000) return v;
+        if (!isNaN(v) && v >= 3000 && v <= 25000) return v;
       }
     }
     return 0;
@@ -985,7 +1015,7 @@ function CompetitorTab({ competitorData }: { competitorData: CompetitorData[] })
       {marketStats && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
           <KpiCard label="경쟁 4사 평균 고등어구이 단가" value={`${marketStats.avg.toLocaleString()}원`} sub={`총 ${marketStats.count}개 매장 표본 기준`} icon={<Activity size={16} />} color="text-indigo-600 dark:text-indigo-400" />
-          <KpiCard label="시장 최저가 (경쟁 하한선)" value={`${marketStats.min.toLocaleString()}원`} sub="가성비 방어 마지노선" icon={<ArrowDown size={16} />} color="text-blue-600 dark:text-blue-400" />
+          <KpiCard label="시장 최저가 (경쟁 하한선)" value={`${marketStats.min.toLocaleString()}원`} sub="가성비 전략 매장 기준" icon={<ArrowDown size={16} />} color="text-blue-600 dark:text-blue-400" />
           <KpiCard label="시장 최고가 (프리미엄 상한선)" value={`${marketStats.max.toLocaleString()}원`} sub="프리미엄/반상 전략 매장" icon={<ArrowUp size={16} />} color="text-rose-600 dark:text-rose-400" />
         </div>
       )}
@@ -995,7 +1025,13 @@ function CompetitorTab({ competitorData }: { competitorData: CompetitorData[] })
           const brandData = latestData.filter(d => d.경쟁브랜드명_엑셀.includes(brand));
           const latestRange = getPriceRange(brand, latestData);
           const prevRange = getPriceRange(brand, prevData);
-          const priceDisplay = latestRange.min > 0 ? latestRange.min === latestRange.max ? `${latestRange.min.toLocaleString()}원` : `${latestRange.min.toLocaleString()} ~ ${latestRange.max.toLocaleString()}원` : '확인 불가';
+          
+          const priceDisplay = latestRange.min > 0 
+            ? latestRange.min === latestRange.max 
+              ? `${latestRange.min.toLocaleString()}원` 
+              : `${latestRange.min.toLocaleString()} ~ ${latestRange.max.toLocaleString()}원` 
+            : '확인 불가';
+            
           let trendEl = null;
           if (latestRange.min > 0 && prevRange.min > 0) {
             const diff = latestRange.min - prevRange.min;
@@ -1022,27 +1058,26 @@ function CompetitorTab({ competitorData }: { competitorData: CompetitorData[] })
               ) : (
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {brandData.slice(0, 3).map((store, idx) => {
-                    const menuItems = store.메뉴_및_가격 && store.메뉴_및_가격 !== '수집 실패' ? store.메뉴_및_가격.split('|').slice(0, 5) : [];
+                    const menuItems = parseMenuString(store.메뉴_및_가격).slice(0, 5);
                     return (
                       <div key={idx} className="px-5 py-3">
                         <div className="flex items-center gap-2 mb-2">
-                          <Store size={11} className="text-slate-400 shrink-0" />
-                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{store.실제_플레이스_업체명}</p>
+                          <Store size={11} className="text-stone-400 shrink-0" />
+                          <p className="text-xs font-bold text-stone-700 dark:text-stone-300 truncate">{store.실제_플레이스_업체명}</p>
                         </div>
                         {menuItems.length > 0 ? (
                           <div className="space-y-1">
                             {menuItems.map((item, i) => {
-                              const [name, price] = item.split(':').map(s => s.trim());
-                              const isHighlight = (name || '').includes('고등어');
+                              const isHighlight = item.name.includes('고등어');
                               return (
-                                <div key={i} className={`flex justify-between text-xs ${isHighlight ? 'font-semibold text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
-                                  <span className="truncate flex-1 mr-2">{name}</span>
-                                  <span className="shrink-0">{price}</span>
+                                <div key={i} className={`flex justify-between text-xs ${isHighlight ? 'font-black text-stone-900 dark:text-white' : 'font-medium text-stone-500 dark:text-stone-400'}`}>
+                                  <span className="truncate flex-1 mr-2">{item.name}</span>
+                                  <span className="shrink-0 font-bold">{item.price}</span>
                                 </div>
                               );
                             })}
                           </div>
-                        ) : <p className="text-xs text-slate-400">메뉴 수집 실패</p>}
+                        ) : <p className="text-xs font-bold text-stone-400">메뉴 수집 실패</p>}
                       </div>
                     );
                   })}
