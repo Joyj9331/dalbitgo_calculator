@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { reviewDb as db, db as mainDb, auth } from '../firebase';
-import { collection, onSnapshot, doc, getDoc, setDoc, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, setDoc, addDoc, query, where } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import {
   AlertTriangle, CheckCircle, Star, Minus, Search,
@@ -1332,14 +1332,23 @@ export function ReviewDashboard({ initialTab }: { initialTab?: string }) {
 
   useEffect(() => {
     const unsubs: (() => void)[] = [];
-    unsubs.push(onSnapshot(collection(db, 'reviews'), snap => {
+    
+    // 💡 [비용 절감] 대시보드 로딩 시 데이터베이스 읽기 용량을 대폭 줄이기 위한 날짜 커트라인 설정
+    const sixtyDaysAgo = new Date(); sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+    const fourteenDaysAgo = new Date(); fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    const date60Str = sixtyDaysAgo.toISOString().split('T')[0];
+    const date14Str = fourteenDaysAgo.toISOString().split('T')[0];
+
+    const qReviews = query(collection(db, 'reviews'), where('작성일', '>=', date60Str));
+    unsubs.push(onSnapshot(qReviews, snap => {
       const data: Review[] = [];
       snap.forEach(d => data.push({ id: d.id, ...d.data() } as Review));
       setReviews(data);
       setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
       setLoading(false);
     }));
-    unsubs.push(onSnapshot(collection(db, 'rank_tracking'), snap => {
+    const qRank = query(collection(db, 'rank_tracking'), where('수집일자', '>=', date14Str));
+    unsubs.push(onSnapshot(qRank, snap => {
       const data: RankData[] = [];
       snap.forEach(d => data.push({ id: d.id, ...d.data() } as RankData));
       setRankData(data);
@@ -1349,7 +1358,8 @@ export function ReviewDashboard({ initialTab }: { initialTab?: string }) {
       snap.forEach(d => data.push({ id: d.id, ...d.data() } as RoiData));
       setRoiData(data);
     }));
-    unsubs.push(onSnapshot(collection(db, 'competitor_menu'), snap => {
+    const qComp = query(collection(db, 'competitor_menu'), where('수집일자', '>=', date14Str));
+    unsubs.push(onSnapshot(qComp, snap => {
       const data: CompetitorData[] = [];
       snap.forEach(d => data.push({ id: d.id, ...d.data() } as CompetitorData));
       setCompetitorData(data);

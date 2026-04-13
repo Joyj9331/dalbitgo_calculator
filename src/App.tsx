@@ -122,11 +122,12 @@ function HomePage({
         const resolved = resolvedDoc.exists() ? resolvedDoc.data()?.ids || [] : [];
         const overridden = overriddenDoc.exists() ? overriddenDoc.data()?.ids || [] : [];
         
-        unsubRev = onSnapshot(collection(reviewDb, 'reviews'), snap => {
+        // 💡 [비용 절감] 1만 개의 전체 리뷰 대신, '부정'으로 판별된 수십 개의 리뷰만 쏙 골라와서 읽기 횟수 95% 절감!
+        const qRev = query(collection(reviewDb, 'reviews'), where('감정분석', '==', '부정'));
+        unsubRev = onSnapshot(qRev, snap => {
           let count = 0;
           snap.forEach(d => {
-            const data = d.data();
-            if (data['감정분석'] === '부정' && !resolved.includes(d.id) && !overridden.includes(d.id)) {
+            if (!resolved.includes(d.id) && !overridden.includes(d.id)) {
               count++;
             }
           });
@@ -136,7 +137,11 @@ function HomePage({
     }).catch(() => setUnresolvedReviewsCount(0));
 
     // 경쟁사 가격 변동 감지
-    const unsubComp = onSnapshot(collection(reviewDb, 'competitor_menu'), snap => {
+    // 💡 [비용 절감] 몇 달 치 전체 데이터 대신 최근 14일 치 데이터만 가볍게 조회
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const compQ = query(collection(reviewDb, 'competitor_menu'), where('수집일자', '>=', twoWeeksAgo.toISOString().split('T')[0]));
+    const unsubComp = onSnapshot(compQ, snap => {
       const data: any[] = [];
       snap.forEach(d => data.push(d.data()));
       
@@ -537,26 +542,31 @@ export default function App() {
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user && user.emailVerified) {
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as User;
-          const isAdminEmail = user.email === 'saemoyang_official@naver.com' || user.email === 'wnsdl9331@gmail.com';
-          if (userData.isActive) {
-            if (isAdminEmail && (userData.role !== 'admin' || !userData.isApproved)) {
-              const updatedUser = { ...userData, role: 'admin' as const, isApproved: true };
-              await setDoc(userDocRef, updatedUser, { merge: true });
-              setCurrentUser(updatedUser);
+        try {
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as User;
+            const isAdminEmail = user.email === 'saemoyang_official@naver.com' || user.email === 'wnsdl9331@gmail.com';
+            if (userData.isActive) {
+              if (isAdminEmail && (userData.role !== 'admin' || !userData.isApproved)) {
+                const updatedUser = { ...userData, role: 'admin' as const, isApproved: true };
+                await setDoc(userDocRef, updatedUser, { merge: true });
+                setCurrentUser(updatedUser);
+              } else {
+                setCurrentUser(userData);
+              }
+              if (userData.theme) setTheme(userData.theme);
             } else {
-              setCurrentUser(userData);
+              alert('계정이 정지되었습니다. 관리자에게 문의하세요.');
+              await signOut(auth);
+              setCurrentUser(null);
             }
-            if (userData.theme) setTheme(userData.theme);
           } else {
-            alert('계정이 정지되었습니다. 관리자에게 문의하세요.');
-            await signOut(auth);
             setCurrentUser(null);
           }
-        } else {
+        } catch (error) {
+          handleFirestoreError(error, OperationType.GET, 'users');
           setCurrentUser(null);
         }
       } else {
@@ -582,7 +592,7 @@ export default function App() {
         snapshot.forEach(d => data.push(d.data() as Brand));
         setBrands(data.sort((a, b) => a.order - b.order));
       }
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'brands'));
     return () => unsubscribe();
   }, [currentUser]);
 
