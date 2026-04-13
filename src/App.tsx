@@ -30,7 +30,7 @@ import {
   ChevronDown, LayoutDashboard, Database, Settings,
   BarChart2, Edit2, Check, Store, TrendingUp, ShieldAlert,
   ArrowRight, Bell, Menu as MenuIcon, TriangleAlert, Bot, CalendarDays, ArrowUpRight, Sparkles, LayoutList, Zap, Eye,
-  CheckSquare
+  CheckSquare, FileText
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { calculateTotalCost, formatPercent, doesMenuContainIngredient, checkMenuAlert } from './utils';
@@ -88,11 +88,13 @@ function HomePage({
   const [unresolvedReviewsCount, setUnresolvedReviewsCount] = useState<number | string>('-');
   const [competitorChangesCount, setCompetitorChangesCount] = useState<number>(0);
   const [missingScheduleStores, setMissingScheduleStores] = useState<{name: string, number: string}[]>([]);
+  const [missingDrawingStores, setMissingDrawingStores] = useState<{name: string, number: string}[]>([]);
 
   useEffect(() => {
     const unsubSch = onSnapshot(collection(salesDb, 'franchise_schedules'), snap => {
       let count = 0;
       const missing: {name: string, number: string}[] = [];
+      const missingDrawings: {name: string, number: string}[] = [];
       snap.forEach(d => {
         const data = d.data();
         if (!data.archived) {
@@ -102,10 +104,14 @@ function HomePage({
           if (data.storeName && !hasDetails) {
             missing.push({ name: data.storeName, number: data.storeNumber || '호수미정' });
           }
+          if (data.storeName && !data.finalDrawingPdfUrl) {
+            missingDrawings.push({ name: data.storeName, number: data.storeNumber || '호수미정' });
+          }
         }
       });
       setActiveSchedulesCount(count);
       setMissingScheduleStores(missing);
+      setMissingDrawingStores(missingDrawings);
     });
 
     let unsubRev: any = null;
@@ -277,6 +283,23 @@ function HomePage({
               {missingScheduleStores.map((s, idx) => (
                 <span key={idx} className="text-xs font-bold bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 px-2.5 py-1.5 rounded-md border border-amber-100 dark:border-amber-700/50 shadow-sm cursor-default">
                   {s.name} [{s.number}] 일정 등록 필요
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚨 도면 누락 경고 배너 */}
+      {missingDrawingStores.length > 0 && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex items-start gap-3 shadow-sm animate-in slide-in-from-top-2">
+          <FileText className="text-blue-500 shrink-0 mt-0.5" size={18} />
+          <div className="flex-1">
+            <h4 className="text-sm font-bold text-blue-800 dark:text-blue-400 mb-2 tracking-tight">최종 도면 등록이 필요한 매장이 있습니다.</h4>
+            <div className="flex flex-wrap gap-2">
+              {missingDrawingStores.map((s, idx) => (
+                <span key={idx} className="text-xs font-bold bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 px-2.5 py-1.5 rounded-md border border-blue-100 dark:border-blue-700/50 shadow-sm cursor-default">
+                  {s.name} [{s.number}] 도면 등록 필요
                 </span>
               ))}
             </div>

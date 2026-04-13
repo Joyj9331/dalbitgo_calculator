@@ -214,6 +214,11 @@ export function FranchiseScheduleView({ brandId }: Props) {
     );
   }, [schedules]);
 
+  // 💡 도면 미입력 매장 감지
+  const missingDrawings = useMemo(() => {
+    return schedules.filter(s => !s.archived && s.storeName && !s.finalDrawingPdfUrl);
+  }, [schedules]);
+
   const CHAT_QUESTIONS = useMemo(() => {
     return [
       "안녕하세요! ✨ 일정을 관리해 드릴게요.\n원하시는 작업을 버튼으로 선택해 주세요.", // 0
@@ -705,6 +710,23 @@ ${transcript}`;
               {missingSchedules.map(s => (
                 <button key={s.id} onClick={() => { setEditingData(s); setShowForm(true); }} className="text-xs font-bold bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 px-2.5 py-1.5 rounded-md border border-amber-100 dark:border-amber-700/50 shadow-sm hover:bg-amber-100 dark:hover:bg-slate-700 transition-colors text-left flex items-center gap-1">
                   {s.storeName} [{s.storeNumber || '호수미정'}] 일정 등록 필요 <span className="opacity-50 ml-0.5">&rarr;</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+       )}
+
+       {/* 🚨 도면 누락 경고 배너 */}
+       {missingDrawings.length > 0 && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex items-start gap-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+          <FileText className="text-blue-500 shrink-0 mt-0.5" size={18} />
+          <div className="flex-1">
+            <h4 className="text-sm font-bold text-blue-800 dark:text-blue-400 mb-2 tracking-tight">최종 도면 등록이 필요한 매장이 있습니다.</h4>
+            <div className="flex flex-wrap gap-2">
+              {missingDrawings.map(s => (
+                <button key={`dw-${s.id}`} onClick={() => { setEditingData(s); setShowForm(true); }} className="text-xs font-bold bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 px-2.5 py-1.5 rounded-md border border-blue-100 dark:border-blue-700/50 shadow-sm hover:bg-blue-100 dark:hover:bg-slate-700 transition-colors text-left flex items-center gap-1">
+                  {s.storeName} [{s.storeNumber || '호수미정'}] 도면 등록 필요 <span className="opacity-50 ml-0.5">&rarr;</span>
                 </button>
               ))}
             </div>
