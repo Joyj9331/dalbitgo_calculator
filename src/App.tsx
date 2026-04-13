@@ -69,6 +69,7 @@ function HomePage({
   ingredients,
   ingredientChanges,
   onNavigate,
+  onFirestoreError,
 }: {
   currentUser: User;
   brands: Brand[];
@@ -76,6 +77,7 @@ function HomePage({
   ingredients: Ingredient[];
   ingredientChanges: IngredientChange[];
   onNavigate: (brandId: BrandId | null, section: SidebarSection, costTab?: CostTabType, reviewTab?: string) => void;
+  onFirestoreError: (error: unknown, operationType: OperationType, path: string | null) => void;
 }) {
   const greeting = () => {
     const hour = new Date().getHours();
@@ -112,7 +114,7 @@ function HomePage({
       setActiveSchedulesCount(count);
       setMissingScheduleStores(missing);
       setMissingDrawingStores(missingDrawings);
-    });
+    }, (error) => onFirestoreError(error, OperationType.GET, 'franchise_schedules'));
 
     let unsubRev: any = null;
     getDoc(doc(reviewDb, 'review_states', 'resolved')).then(resolvedDoc => {
@@ -129,7 +131,7 @@ function HomePage({
             }
           });
           setUnresolvedReviewsCount(count);
-        });
+        }, (error) => onFirestoreError(error, OperationType.GET, 'reviews'));
       });
     }).catch(() => setUnresolvedReviewsCount(0));
 
@@ -194,7 +196,7 @@ function HomePage({
       } else {
         setCompetitorChangesCount(0);
       }
-    });
+    }, (error) => onFirestoreError(error, OperationType.GET, 'competitor_menu'));
 
     return () => {
       unsubSch();
@@ -1389,6 +1391,7 @@ export default function App() {
               ingredients={ingredients}
               ingredientChanges={ingredientChanges}
               onNavigate={navigateTo}
+              onFirestoreError={handleFirestoreError}
             />
           )}
 
