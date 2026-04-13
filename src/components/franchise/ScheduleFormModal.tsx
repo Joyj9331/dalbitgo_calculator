@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { FranchiseSchedule, TeamSetting } from '../../types';
-import { X, Calculator, AlertCircle, Palette, Eye, EyeOff } from 'lucide-react';
+import { X, Calculator, AlertCircle, Palette, Eye, EyeOff, FileText, UploadCloud, Loader2 } from 'lucide-react';
 import { useToast } from '../Toast';
 import { addDays, diffDays, addExcludingSunday, getOvenInDate, getPreTrainingStartDate } from '../../utils';
 import { BUILTIN_PROGRESS, ProcessSettings } from './ProcessMasterModal';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../../firebase';
 
 interface Props {
   initial: Partial<FranchiseSchedule>;
@@ -47,6 +49,7 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
   const [form, setForm] = useState<Partial<FranchiseSchedule>>({
     showInCalendar: true,
     progressCheck: {
+      drawingUpload: false,
       ovenOrder: false,
       ownerGuide: false,
       equipmentOrder: false,
@@ -58,6 +61,7 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
   
   const [isGasCustom, setIsGasCustom] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   
   // 💡 신규: 일정 자동 계산 토글 (AI가 자동계산을 요청했거나 기존 일정이 없으면 ON)
   const [autoCalc, setAutoCalc] = useState((initial as any).isAiAutoCalc ?? (!initial.id && !initial.openDate));
@@ -70,7 +74,7 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
     setForm(prev => ({
       ...prev,
       progressCheck: {
-        ...(prev.progressCheck || { ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
+        ...(prev.progressCheck || { drawingUpload: false, ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
         [key]: val
       }
     }));
@@ -169,6 +173,34 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
       await onSave(form);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      toast.error('PDF 파일만 업로드 가능합니다.');
+      return;
+    }
+    setIsUploadingPdf(true);
+    try {
+      const fileRef = ref(storage, `drawings/${Date.now()}_${file.name}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+      setForm(prev => ({
+        ...prev,
+        finalDrawingPdfUrl: url,
+        progressCheck: {
+          ...(prev.progressCheck || { drawingUpload: false, ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
+          drawingUpload: true
+        }
+      }));
+      toast.success('도면이 업로드되었습니다.');
+    } catch (err) {
+      toast.error('도면 업로드에 실패했습니다.');
+    } finally {
+      setIsUploadingPdf(false);
     }
   };
 
@@ -359,6 +391,23 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
                 <div><label className={labelCls}>초도물품 입고일</label><input type="date" className={inputCls} value={form.initialStockIn || ''} onChange={e => set('initialStockIn', e.target.value)} /></div>
                 <div><label className={labelCls}>그랜드 오픈일</label><input type="date" className={`${inputCls} border-rose-200 dark:border-rose-900 font-bold text-rose-600`} value={form.openDate || ''} onChange={e => set('openDate', e.target.value)} /></div>
               </div>
+            </div>
+          </div>
+
+          <hr className="border-slate-100 dark:border-slate-800" />
+          <div className="space-y-2">
+            <label className={labelCls}>최종 도면 (PDF)</label>
+            <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
+              <input type="file" accept=".pdf" id="pdf-upload" className="hidden" onChange={handlePdfUpload} disabled={isUploadingPdf} />
+              <label htmlFor="pdf-upload" className="flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm font-bold border border-slate-200 dark:border-slate-700 shadow-sm">
+                {isUploadingPdf ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
+                {isUploadingPdf ? '업로드 중...' : '도면 PDF 파일 첨부'}
+              </label>
+              {form.finalDrawingPdfUrl && (
+                <a href={form.finalDrawingPdfUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-bold underline underline-offset-2 ml-2">
+                  <FileText size={14} /> 업로드된 도면 보기
+                </a>
+              )}
             </div>
           </div>
 

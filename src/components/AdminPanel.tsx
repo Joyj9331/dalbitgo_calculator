@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
-import { collection, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, limit } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, limit, getDoc, setDoc } from 'firebase/firestore';
 import { User, Ingredient } from '../types';
-import { Check, X, Trash2, ShieldAlert, Database, RefreshCw, AlertCircle, History } from 'lucide-react';
+import { Check, X, Trash2, ShieldAlert, Database, RefreshCw, AlertCircle, History, Key } from 'lucide-react';
 import { writeBatch } from 'firebase/firestore';
 import { useConfirm } from './ConfirmModal';
+import { useToast } from './Toast';
 
 enum OperationType {
   CREATE = 'create',
@@ -45,6 +46,9 @@ export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients }) =
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [recalcStatus, setRecalcStatus] = useState<string | null>(null);
   const [logs, setLogs] = useState<any[]>([]);
+  const [naverPlacePassword, setNaverPlacePassword] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
@@ -67,6 +71,16 @@ export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients }) =
       setLogs(logsData);
     });
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const fetchSecurity = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'system_settings', 'security'));
+        if (snap.exists()) setNaverPlacePassword(snap.data().naverPlacePassword || '');
+      } catch(e) {}
+    };
+    fetchSecurity();
   }, []);
 
   const handleApprove = async (uid: string, isApproved: boolean) => {
@@ -145,6 +159,18 @@ export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients }) =
     }
   };
 
+  const handleSavePassword = async () => {
+    setIsSavingPassword(true);
+    try {
+      await setDoc(doc(db, 'system_settings', 'security'), { naverPlacePassword }, { merge: true });
+      toast.success('보안 비밀번호가 저장되었습니다.');
+    } catch(e) {
+      onFirestoreError(e, OperationType.WRITE, 'system_settings/security');
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Database Maintenance Section */}
@@ -181,6 +207,32 @@ export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients }) =
               {recalcStatus}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Security Settings Section */}
+      <div className="bg-[#FDFBF7] dark:bg-stone-900 rounded-sm border border-stone-300 dark:border-stone-800 overflow-hidden">
+        <div className="p-4 border-b-2 border-stone-800 dark:border-stone-600 bg-white dark:bg-stone-800/50 flex items-center gap-2">
+          <Key className="text-stone-800 dark:text-stone-300" size={20} />
+          <h2 className="text-lg font-black tracking-tight text-stone-900 dark:text-white">보안 설정</h2>
+        </div>
+        <div className="p-6">
+          <h3 className="text-sm font-bold text-stone-900 dark:text-white mb-1">네이버 플레이스 계정 열람 마스터 비밀번호</h3>
+          <p className="text-xs font-medium text-stone-500 dark:text-stone-400 mb-4">
+            오픈 체크리스트에서 가맹점 네이버 플레이스 권한을 열람할 때 공통으로 사용할 암호를 설정합니다.
+          </p>
+          <div className="flex items-center gap-3 max-w-md">
+            <input 
+              type="text" 
+              placeholder="마스터 비밀번호 (예: dalbitgo123!)" 
+              value={naverPlacePassword}
+              onChange={e => setNaverPlacePassword(e.target.value)}
+              className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-900 dark:text-white"
+            />
+            <button onClick={handleSavePassword} disabled={isSavingPassword || !naverPlacePassword} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-sm disabled:opacity-50 transition-colors shadow-sm">
+              {isSavingPassword ? '저장 중...' : '저장'}
+            </button>
+          </div>
         </div>
       </div>
 

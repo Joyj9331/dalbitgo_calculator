@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { salesDb as db, db as mainDb, auth } from '../../firebase';
 import { collection, getDocs, doc, deleteDoc, updateDoc, addDoc, getDoc, setDoc } from 'firebase/firestore';
 import { FranchiseSchedule, TeamSetting, BrandId } from '../../types';
-import { Plus, Search, Settings, CheckCircle2, Eye, EyeOff, X, Layers, CheckCheck, Sparkles, Bot, Send, User as UserIcon, CalendarDays, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Settings, CheckCircle2, Eye, EyeOff, X, Layers, CheckCheck, Sparkles, Bot, Send, User as UserIcon, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
 import { useToast } from '../Toast';
 import { useConfirm } from '../ConfirmModal';
 import { GoogleGenAI } from '@google/genai';
@@ -55,7 +55,7 @@ export function FranchiseScheduleView({ brandId }: Props) {
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [isAutoCalc, setIsAutoCalc] = useState(false);
   const [pendingAiData, setPendingAiData] = useState<Partial<FranchiseSchedule> | null>(null);
-  const [chatMode, setChatMode] = useState<'CREATE' | 'UPDATE' | null>(null);
+  const [chatMode, setChatMode] = useState<'CREATE' | 'UPDATE' | 'SEARCH_DRAWING' | null>(null);
   const [draftData, setDraftData] = useState<Partial<FranchiseSchedule>>({});
   const [updateStoreNotFound, setUpdateStoreNotFound] = useState(false);
   const [updateField, setUpdateField] = useState('');
@@ -173,7 +173,7 @@ export function FranchiseScheduleView({ brandId }: Props) {
       const schedule = schedules.find(s => s.id === id);
       if (!schedule) return;
       const newProgress = {
-        ...(schedule.progressCheck || { ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
+        ...(schedule.progressCheck || { drawingUpload: false, ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
         [key]: !currentVal
       };
       setSchedules(prev => prev.map(x => x.id === id ? { ...x, progressCheck: newProgress } : x));
@@ -222,18 +222,19 @@ export function FranchiseScheduleView({ brandId }: Props) {
       "담당할 팀을 선택해 주세요.", // 3
       "매장 일정을 어떻게 입력하시겠어요?\n\n🔹 자동 계산: 공사일만 선택하면 완료\n🔹 수동 상세 입력: 모든 일정을 직접 캘린더로 지정", // 4
       "공사 시작일과 종료일을 캘린더에서 선택해 주세요. (첫 클릭: 시작일, 두 번째 클릭: 종료일)", // 5
-      "공사 업체는 어디인가요?", // 6
-      "간판 업체는 어디인가요?", // 7
-      "화덕 입고일은 언제인가요? 캘린더에서 선택해 주세요.", // 8
-      "가스 종류는 무엇인가요?", // 9
-      "화구류 입고일은 언제인가요? 캘린더에서 선택해 주세요.", // 10
-      "점주 안내 시작일은 언제인가요? 캘린더에서 선택해 주세요.", // 11
-      "사전교육 시작일과 종료일을 캘린더에서 선택해 주세요. (진행 안 하시면 '진행 안함' 클릭)", // 12
-      "사전교육 장소와 참여 인원은 어떻게 되나요? (예: 남원 3명. 모르면 엔터)", // 13
-      "초도물품 입고일은 언제인가요? 캘린더에서 선택해 주세요.", // 14
-      "본사교육 시작일과 종료일을 캘린더에서 선택해 주세요. (진행 안 하시면 '진행 안함' 클릭)", // 15
-      "그랜드 오픈일은 언제인가요? 캘린더에서 선택해 주세요.", // 16
-      "마지막으로 기타 특이사항/메모가 있나요? (없으면 엔터 치시면 완료됩니다!)" // 17
+      "최종 도면이 준비되었나요? (준비되었다면 '네', 아니면 패스를 선택해 주세요. 실제 파일 첨부는 대화 완료 후 가능합니다.)", // 6
+      "공사 업체는 어디인가요?", // 7
+      "간판 업체는 어디인가요?", // 8
+      "화덕 입고일은 언제인가요? 캘린더에서 선택해 주세요.", // 9
+      "가스 종류는 무엇인가요?", // 10
+      "화구류 입고일은 언제인가요? 캘린더에서 선택해 주세요.", // 11
+      "점주 안내 시작일은 언제인가요? 캘린더에서 선택해 주세요.", // 12
+      "사전교육 시작일과 종료일을 캘린더에서 선택해 주세요. (진행 안 하시면 '진행 안함' 클릭)", // 13
+      "사전교육 장소와 참여 인원은 어떻게 되나요? (예: 남원 3명. 모르면 엔터)", // 14
+      "초도물품 입고일은 언제인가요? 캘린더에서 선택해 주세요.", // 15
+      "본사교육 시작일과 종료일을 캘린더에서 선택해 주세요. (진행 안 하시면 '진행 안함' 클릭)", // 16
+      "그랜드 오픈일은 언제인가요? 캘린더에서 선택해 주세요.", // 17
+      "마지막으로 기타 특이사항/메모가 있나요? (없으면 엔터 치시면 완료됩니다!)" // 18
     ];
   }, []);
 
@@ -336,20 +337,34 @@ export function FranchiseScheduleView({ brandId }: Props) {
     // 💡 [핵심] 라이브 프리뷰 업데이트 (Draft Data)
     let currentMode = chatMode;
     if (chatStep === 0) {
-      currentMode = rawInput.includes('신규') || rawInput.includes('1') ? 'CREATE' : 'UPDATE';
+      if (rawInput.includes('신규') || rawInput.includes('1')) currentMode = 'CREATE';
+      else if (rawInput.includes('도면') || rawInput.includes('검색')) currentMode = 'SEARCH_DRAWING';
+      else currentMode = 'UPDATE';
       setChatMode(currentMode);
     }
     
     let validationError = '';
     let newDraft = { ...draftData } as Partial<FranchiseSchedule>;
     if (chatStep === 1) {
-      if (currentMode === 'UPDATE') {
+      if (currentMode === 'UPDATE' || currentMode === 'SEARCH_DRAWING') {
         const existing = schedules.find(s => s.storeName.includes(rawInput) || rawInput.includes(s.storeName));
         if (existing) {
           newDraft = { ...existing };
           setUpdateStoreNotFound(false);
+          
+          if (currentMode === 'SEARCH_DRAWING') {
+            setDraftData(newDraft);
+            if (existing.finalDrawingPdfUrl) {
+              setTimeout(() => setChatMessages(prev => [...prev, { role: 'bot', text: `✨ [${existing.storeName}] 매장의 도면을 찾았습니다!\n\n새 창에서 PDF가 자동으로 열립니다. (팝업이 차단된 경우 아래 링크를 클릭하세요)\n🔗 ${existing.finalDrawingPdfUrl}` }]), 300);
+              setTimeout(() => window.open(existing.finalDrawingPdfUrl, '_blank'), 800);
+            } else {
+              setTimeout(() => setChatMessages(prev => [...prev, { role: 'bot', text: `앗, [${existing.storeName}] 매장은 아직 첨부된 도면(PDF)이 없습니다. 😢\n창을 닫거나 처음으로 돌아가 주세요.` }]), 300);
+            }
+            setChatStep(99); // 대화 종료 스텝
+            return;
+          }
         } else {
-          validationError = "⚠️ 해당 매장명을 찾을 수 없습니다. 아래 진행 중인 매장 목록에서 선택해 주세요.";
+          validationError = "⚠️ 해당 매장명을 찾을 수 없습니다. 아래 목록에서 선택해 주세요.";
           setUpdateStoreNotFound(true);
         }
       } else {
@@ -373,16 +388,21 @@ export function FranchiseScheduleView({ brandId }: Props) {
     };
     
     if (chatStep === 5) { const d = parseDates(rawInput); if (d) applyDraft('constructionStart', d.start, 'constructionEnd', d.end); }
-    if (chatStep === 6 && rawInput !== '엔터 (패스)') newDraft.constructionType = rawInput;
-    if (chatStep === 7 && rawInput !== '엔터 (패스)') newDraft.signageType = rawInput;
-    if (chatStep === 8) { const d = parseDates(rawInput); if (d) applyDraft('ovenIn', d.start, 'ovenEnd', d.start); }
-    if (chatStep === 9 && rawInput !== '엔터 (패스)') newDraft.gasType = rawInput;
-    if (chatStep === 10) { const d = parseDates(rawInput); if (d) applyDraft('equipmentIn', d.start, 'equipmentIn', d.start); }
-    if (chatStep === 11) { const d = parseDates(rawInput); if (d) applyDraft('ownerGuideStart', d.start, 'ownerGuideStart', d.start); }
-    if (chatStep === 12) { const d = parseDates(rawInput); if (d) applyDraft('preTrainingStart', d.start, 'preTrainingEnd', d.end); }
-    if (chatStep === 14) { const d = parseDates(rawInput); if (d) applyDraft('initialStockIn', d.start, 'initialStockEnd', d.start); }
-    if (chatStep === 15) { const d = parseDates(rawInput); if (d) applyDraft('trainingStart', d.start, 'trainingEnd', d.end); }
-    if (chatStep === 16) { const d = parseDates(rawInput); if (d) applyDraft('openDate', d.start, 'openDate', d.start); }
+    if (chatStep === 6) {
+      if (rawInput === '네' || rawInput.includes('준비') || rawInput.includes('ㅇㅇ')) {
+        newDraft.progressCheck = { ...(newDraft.progressCheck || {}), drawingUpload: true } as any;
+      }
+    }
+    if (chatStep === 7 && rawInput !== '엔터 (패스)') newDraft.constructionType = rawInput;
+    if (chatStep === 8 && rawInput !== '엔터 (패스)') newDraft.signageType = rawInput;
+    if (chatStep === 9) { const d = parseDates(rawInput); if (d) applyDraft('ovenIn', d.start, 'ovenEnd', d.start); }
+    if (chatStep === 10 && rawInput !== '엔터 (패스)') newDraft.gasType = rawInput;
+    if (chatStep === 11) { const d = parseDates(rawInput); if (d) applyDraft('equipmentIn', d.start, 'equipmentIn', d.start); }
+    if (chatStep === 12) { const d = parseDates(rawInput); if (d) applyDraft('ownerGuideStart', d.start, 'ownerGuideStart', d.start); }
+    if (chatStep === 13) { const d = parseDates(rawInput); if (d) applyDraft('preTrainingStart', d.start, 'preTrainingEnd', d.end); }
+    if (chatStep === 15) { const d = parseDates(rawInput); if (d) applyDraft('initialStockIn', d.start, 'initialStockEnd', d.start); }
+    if (chatStep === 16) { const d = parseDates(rawInput); if (d) applyDraft('trainingStart', d.start, 'trainingEnd', d.end); }
+    if (chatStep === 17) { const d = parseDates(rawInput); if (d) applyDraft('openDate', d.start, 'openDate', d.start); }
     
     setDraftData(newDraft);
 
@@ -451,9 +471,9 @@ export function FranchiseScheduleView({ brandId }: Props) {
     }
 
     let nextStep = chatStep + 1;
-    // 💡 핵심 분기: 자동 계산 모드면 5번(공사일) 질문 이후 바로 12번(종료)으로 스킵!
-    if (chatStep === 5 && isAutoCalc) {
-      nextStep = 17;
+    // 💡 핵심 분기: 자동 계산 모드면 6번(도면) 질문 이후 바로 18번(종료)으로 스킵!
+    if (chatStep === 6 && isAutoCalc) {
+      nextStep = 18;
     }
 
     if (nextStep < CHAT_QUESTIONS.length) {
@@ -465,7 +485,7 @@ export function FranchiseScheduleView({ brandId }: Props) {
         let msgText = CHAT_QUESTIONS[nextStep];
         
         // 💡 초도물품 입고일 질문 시 공사 종료일 안내 가이드 동적 삽입
-        if (nextStep === 14) {
+        if (nextStep === 15) {
           msgText += `\n\n💡 참고: 설정하신 공사 종료일은 [ ${newDraft.constructionEnd || '미정'} ] 입니다.`;
         }
         setChatMessages(prev => [...prev, { role: 'bot', text: msgText }]);
@@ -522,7 +542,10 @@ export function FranchiseScheduleView({ brandId }: Props) {
     "initialStockIn": "초도물품 입고일",
     "openDate": "그랜드 오픈일",
     "ownerGuideStart": "점주 안내 시작일",
-    "notes": "특이사항"
+    "notes": "특이사항",
+    "progressCheck": {
+      "drawingUpload": "도면 준비 여부 (true/false)"
+    }
   }
 }
 
@@ -544,8 +567,11 @@ ${transcript}`;
         if (parsed.action === 'UPDATE' && parsed.targetStoreName) {
           const existing = schedules.find(s => s.storeName.includes(parsed.targetStoreName) || parsed.targetStoreName.includes(s.storeName));
           if (existing) {
-            const cleanUpdates = Object.fromEntries(Object.entries(parsed.data).filter(([_, v]) => v !== ""));
+            const cleanUpdates = Object.fromEntries(Object.entries(parsed.data).filter(([k, v]) => v !== "" && k !== "progressCheck"));
             finalData = { ...existing, ...cleanUpdates };
+            if (parsed.data.progressCheck) {
+               finalData.progressCheck = { ...existing.progressCheck, ...parsed.data.progressCheck };
+            }
           }
         }
         
@@ -595,7 +621,7 @@ ${transcript}`;
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm mb-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-              {chatMode === 'UPDATE' ? '변경' : '신규'}
+              {chatMode === 'UPDATE' ? '변경' : chatMode === 'SEARCH_DRAWING' ? '검색' : '신규'}
             </span>
             <span className="font-bold text-slate-900 dark:text-white truncate">{draftData.storeName || '매장명 미정'}</span>
             <span className="text-xs font-semibold text-slate-500">{draftData.storeNumber || ''}</span>
@@ -799,7 +825,14 @@ ${transcript}`;
                                 <span className="font-black text-xl tracking-tight text-stone-900 dark:text-white group-hover:text-stone-600 transition-colors truncate">{sch.storeName}</span>
                                 <span className="text-[10px] font-bold text-stone-500 border border-stone-300 dark:border-stone-700 px-1.5 py-0.5 rounded-sm shrink-0">{sch.storeNumber || '호수 미정'}</span>
                               </div>
-                              <div className="text-xs text-stone-500 font-bold ml-5 tracking-widest">{sch.team || '팀 미정'}</div>
+                              <div className="text-xs text-stone-500 font-bold ml-5 tracking-widest flex items-center gap-3">
+                                <span>{sch.team || '팀 미정'}</span>
+                                {sch.finalDrawingPdfUrl && (
+                                  <a href={sch.finalDrawingPdfUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-1 text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800 transition-colors hover:bg-blue-100">
+                                    <FileText size={10} /> 도면 보기
+                                  </a>
+                                )}
+                              </div>
                             </button>
                             <div className="flex items-center gap-1 shrink-0 ml-2">
                                <button 
@@ -957,18 +990,25 @@ ${transcript}`;
                 
                 {/* 다이나믹 채팅 입력창 렌더링 */}
                 {(() => {
-                if (chatStep === 0) return (
+                if (chatStep === 99) return (
                   <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                    <button onClick={() => openAiChat()} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-sm">처음으로 돌아가기</button>
+                    <button onClick={() => setShowAiModal(false)} className="flex-1 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-300 transition-colors shadow-sm">창 닫기</button>
+                  </div>
+                );
+                if (chatStep === 0) return (
+                  <div className="flex flex-wrap gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
                     <button onClick={() => submitChat('신규 일정 등록')} className="flex-1 py-3 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 hover:bg-indigo-100 rounded-xl font-bold transition-colors shadow-sm">신규 일정 등록</button>
                     <button onClick={() => submitChat('기존 일정 변경')} className="flex-1 py-3 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 hover:bg-indigo-100 rounded-xl font-bold transition-colors shadow-sm">기존 일정 변경</button>
+                    <button onClick={() => submitChat('도면 검색')} className="flex-1 py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 hover:bg-emerald-100 rounded-xl font-bold transition-colors shadow-sm">도면 검색</button>
                   </div>
                 );
                 if (chatStep === 1 && updateStoreNotFound) return (
                   <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
                     <select value={chatInput || ''} onChange={e => { setChatInput(e.target.value); if(e.target.value) submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
-                      <option value="">진행 중인 매장을 선택해 주세요</option>
-                      {schedules.filter(s => !s.archived).map(s => (
-                        <option key={s.id} value={s.storeName}>{s.storeName}</option>
+                      <option value="">매장을 선택해 주세요</option>
+                      {schedules.map(s => (
+                        <option key={s.id} value={s.storeName}>{s.storeName} {s.archived ? '(오픈완료)' : ''}</option>
                       ))}
                     </select>
                     <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-300 transition-colors shadow-sm">패스</button>
@@ -1019,6 +1059,12 @@ ${transcript}`;
                 );
                 if (chatStep === 6) return (
                   <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                    <button onClick={() => submitChat('네')} className="flex-1 py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 hover:bg-emerald-100 rounded-xl font-bold transition-colors shadow-sm">네, 준비되었습니다</button>
+                    <button onClick={() => submitChat('아니오')} className="flex-1 py-3 bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 hover:bg-slate-200 rounded-xl font-bold transition-colors shadow-sm">아니오, 나중에 할게요</button>
+                  </div>
+                );
+                if (chatStep === 7) return (
+                  <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
                     <select value={chatInput || ''} onChange={e => { setChatInput(e.target.value); if(e.target.value) submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
                       <option value="">공사업체 선택 (또는 패스)</option>
                       <option value="더원">더원</option>
@@ -1028,7 +1074,7 @@ ${transcript}`;
                     <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-300 transition-colors shadow-sm">패스</button>
                   </div>
                 );
-                if (chatStep === 7) return (
+                if (chatStep === 8) return (
                   <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
                     <select value={chatInput || ''} onChange={e => { setChatInput(e.target.value); if(e.target.value) submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
                       <option value="">간판업체 선택 (또는 패스)</option>
@@ -1038,7 +1084,7 @@ ${transcript}`;
                     <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-300 transition-colors shadow-sm">패스</button>
                   </div>
                 );
-              if (chatStep === 9) return (
+              if (chatStep === 10) return (
                 <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
                   <select value={chatInput || ''} onChange={e => { setChatInput(e.target.value); if(e.target.value) submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
                     <option value="">가스 종류 선택 (또는 패스)</option>
@@ -1050,7 +1096,7 @@ ${transcript}`;
                   <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-300 transition-colors shadow-sm">패스</button>
                 </div>
               );
-              if ([5, 8, 10, 11, 12, 14, 15, 16].includes(chatStep) && !pendingAiData && !isAiProcessing) return (
+              if ([5, 9, 11, 12, 13, 15, 16, 17].includes(chatStep) && !pendingAiData && !isAiProcessing) return (
                   <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">{renderMiniCalendar()}</div>
                 );
                 return (

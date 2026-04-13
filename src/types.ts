@@ -173,6 +173,7 @@ export interface FranchiseSchedule {
   ownerGuideStart: string;  // 점주 안내 시작
   equipmentIn: string;      // 화구류 입고일
   progressCheck: {
+    drawingUpload: boolean;
     ovenOrder: boolean;
     ownerGuide: boolean;
     equipmentOrder: boolean;
@@ -200,6 +201,12 @@ export interface FranchiseSchedule {
   
   teamMembersSnapshot?: TeamMember[]; // 등록/수정 당시의 팀원 목록 스냅샷
 
+  finalDrawingPdfUrl?: string; // 💡 최종 도면 PDF 다운로드 URL
+
+  // 💡 오픈 체크리스트 연동 데이터
+  checklist?: ChecklistItem[]; 
+  checklistData?: Record<string, ChecklistItemData>; 
+
   archived?: boolean;
 
   createdAt?: string;
@@ -218,4 +225,29 @@ export interface TeamSetting {
   members: TeamMember[]; // 소속 SV들
   color?: string;  // 팀별 고유 색상 (Tailwind bg class 등)
   createdAt?: string;
+}
+
+// ==========================================
+// 오픈 체크리스트 전용 데이터 타입
+// ==========================================
+
+export type ChecklistItemType = 'normal' | 'staffing' | 'email' | 'training' | 'pdf' | 'date' | 'showcase' | 'food_waste' | 'secure_account';
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  type: ChecklistItemType;
+}
+
+export interface ChecklistItemData {
+  status: number; // 0: 미진행, 1: 안내완료, 2: 진행중, 3: 완료
+  note1?: string; // 일반 메모, 이메일, 홀 직원수, 교육 장소
+  note2?: string; // 홀 파트수, 교육 장소(직접입력)
+  note3?: string; // 주방 직원수, 교육 시작일
+  note4?: string; // 주방 파트수, 교육 종료일
+  note5?: string; // 교육 시작시간
+  note6?: string; // 교육 종료시간
+  note7?: string; // 교육 인원
+  note8?: string; // 담당자
+  note9?: string; // 교육비 입금 상태 (사전교육) 등 추가 용도
 }

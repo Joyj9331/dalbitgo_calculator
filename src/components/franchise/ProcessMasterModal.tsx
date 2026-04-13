@@ -34,6 +34,7 @@ export const DEFAULT_PHASE_VISIBILITY: Record<string, boolean> = {
 
 // 기본 진행 체크 항목 (progressCheck 필드 매핑)
 export const BUILTIN_PROGRESS = [
+  { id: 'drawingUpload', defaultLabel: '도면' },
   { id: 'ovenOrder', defaultLabel: '화덕' },
   { id: 'ownerGuide', defaultLabel: '점주' },
   { id: 'equipmentOrder', defaultLabel: '대소' },

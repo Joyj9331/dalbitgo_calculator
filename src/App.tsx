@@ -21,6 +21,7 @@ import { StoreManagement } from './components/StoreManagement';
 import { MarketingDashboard } from './components/marketing';
 import { SalesDashboard } from './components/sales/SalesDashboard';
 import { FranchiseScheduleView } from './components/franchise';
+import { OpenChecklistView } from './components/franchise';
 import { useToast } from './components/Toast';
 import { useConfirm } from './components/ConfirmModal';
 import {
@@ -28,7 +29,8 @@ import {
   Archive, AlertTriangle, Trash2, X, ChevronLeft, ChevronRight,
   ChevronDown, LayoutDashboard, Database, Settings,
   BarChart2, Edit2, Check, Store, TrendingUp, ShieldAlert,
-  ArrowRight, Bell, Menu as MenuIcon, TriangleAlert, Bot, CalendarDays, ArrowUpRight, Sparkles, LayoutList, Zap, Eye
+  ArrowRight, Bell, Menu as MenuIcon, TriangleAlert, Bot, CalendarDays, ArrowUpRight, Sparkles, LayoutList, Zap, Eye,
+  CheckSquare
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { calculateTotalCost, formatPercent, doesMenuContainIngredient, checkMenuAlert } from './utils';
@@ -45,7 +47,7 @@ enum OperationType {
 }
 
 type CostTabType = Region | '전체보기' | '메뉴 관리' | '변동사항';
-type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing' | 'franchise';
+type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing' | 'franchise' | 'checklist';
 
 interface SidebarState {
   brandId: BrandId | null;
@@ -1060,6 +1062,7 @@ export default function App() {
     { id: 'sales' as SidebarSection, label: '매출 현황', icon: <BarChart2 size={14} /> },
     { id: 'review' as SidebarSection, label: '가맹점 관제', icon: <ShieldAlert size={14} /> },
     { id: 'franchise' as SidebarSection, label: '오픈 일정', icon: <CalendarDays size={14} /> },
+    { id: 'checklist' as SidebarSection, label: '오픈 체크리스트', icon: <CheckSquare size={14} /> },
     { id: 'marketing' as SidebarSection, label: '마케팅 봇', icon: <Bot size={14} /> },
   ];
 
@@ -1106,7 +1109,7 @@ export default function App() {
 
       {/* 모바일 햄버거 버튼 */}
       {isMobile && (
-        <header className="bg-[#FDFBF7]/95 dark:bg-stone-900/95 backdrop-blur-md fixed top-0 w-full z-40 border-b-[3px] border-double border-stone-800 dark:border-stone-400 h-14 flex items-center justify-between px-4 shadow-sm">
+        <header className="bg-[#FDFBF7]/95 dark:bg-stone-900/95 backdrop-blur-md fixed top-0 w-full z-40 border-b-[3px] border-double border-stone-800 dark:border-stone-400 h-14 flex items-center justify-between px-4 shadow-sm print:hidden">
           <div className="flex items-center gap-3">
             <button onClick={() => setMobileSidebarOpen(true)} className="text-stone-600 dark:text-stone-400 hover:bg-stone-200 dark:hover:bg-stone-800 p-1.5 rounded-sm transition-colors active:scale-95">
               <MenuIcon size={20} />
@@ -1120,8 +1123,8 @@ export default function App() {
       <aside className={`${
         isMobile
           ? `fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
-          : `${sidebarCollapsed ? 'w-14' : 'w-60'} transition-all duration-300 sticky top-0 h-screen shrink-0`
-      } bg-[#FDFBF7] dark:bg-stone-900 border-r border-stone-300 dark:border-stone-700 flex flex-col shadow-sm`}>
+          : `${sidebarCollapsed ? 'w-14' : 'w-60'} transition-all duration-300 sticky top-0 h-screen shrink-0 print:hidden`
+      } bg-[#FDFBF7] dark:bg-stone-900 border-r border-stone-300 dark:border-stone-700 flex flex-col shadow-sm print:hidden`}>
 
         <div className="flex items-center justify-between px-4 py-4 border-b-[3px] border-double border-stone-800 dark:border-stone-400">
           {(!sidebarCollapsed || isMobile) && (
@@ -1351,7 +1354,7 @@ export default function App() {
       </aside>
 
       {/* 메인 콘텐츠 */}
-      <main className={`flex-1 overflow-auto ${isMobile ? 'pt-14 pb-20' : ''}`}>
+      <main className={`flex-1 overflow-auto ${isMobile ? 'pt-14 pb-20' : ''} print:p-0 print:overflow-visible print:bg-white`}>
         <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
 
           {/* 홈 (랜딩) */}
@@ -1432,6 +1435,11 @@ export default function App() {
               {/* 오픈 일정 */}
               {sidebar.section === 'franchise' && sidebar.brandId && (
                 <FranchiseScheduleView brandId={sidebar.brandId} />
+              )}
+
+              {/* 오픈 체크리스트 */}
+              {sidebar.section === 'checklist' && sidebar.brandId && (
+                <OpenChecklistView brandId={sidebar.brandId} />
               )}
 
               {/* 마케팅 봇 */}
@@ -1564,7 +1572,7 @@ export default function App() {
       )}
 
       {/* 모바일용 Bottom Navigation Bar */}
-      {isMobile && (
+      {isMobile && !showMobileQuickMenu && (
         <nav className="bg-[#FDFBF7]/95 dark:bg-stone-900/95 backdrop-blur-md fixed bottom-0 left-0 right-0 flex justify-around items-center h-16 pb-safe px-2 z-40 border-t-[3px] border-double border-stone-800 dark:border-stone-400 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] text-[10px] font-bold">
           <button onClick={() => navigateTo(null, 'home')} className={`flex flex-col items-center justify-center w-16 h-12 rounded-sm transition-colors ${sidebar.section === 'home' ? 'text-stone-900 dark:text-white border-b-2 border-stone-900 dark:border-stone-300' : 'text-stone-400 hover:text-stone-700'}`}>
             <LayoutList size={20} className="mb-0.5" />
