@@ -33,14 +33,7 @@ export const DEFAULT_PHASE_VISIBILITY: Record<string, boolean> = {
 };
 
 // 기본 진행 체크 항목 (progressCheck 필드 매핑)
-export const BUILTIN_PROGRESS = [
-  { id: 'drawingUpload', defaultLabel: '도면' },
-  { id: 'ovenOrder', defaultLabel: '화덕' },
-  { id: 'ownerGuide', defaultLabel: '점주' },
-  { id: 'equipmentOrder', defaultLabel: '대소' },
-  { id: 'internetOrder', defaultLabel: '넷' },
-  { id: 'initialEntry', defaultLabel: '초도' },
-];
+export const BUILTIN_PROGRESS: any[] = []; // 호환성을 위해 빈 배열로 남김
 
 export interface ProcessSettings {
   phaseVisibility: Record<string, boolean>;        // 캘린더 공정 표기 여부
@@ -157,88 +150,6 @@ export function ProcessMasterModal({ brandId, onClose, onSaved }: Props) {
                 })}
               </div>
             </section>
-
-            {/* ── 진행 체크 항목 ── */}
-            <section>
-              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">진행 체크 항목 관리</h3>
-              <p className="text-xs text-slate-400 mb-3">기본 항목은 이름만 변경 가능. 커스텀 항목은 추가/삭제 가능.</p>
-
-              <div className="space-y-1.5 mb-3">
-                {BUILTIN_PROGRESS.map(item => {
-                  const label = progressLabels[item.id] ?? item.defaultLabel;
-                  const isEdit = editingId === item.id;
-                  return (
-                    <div key={item.id} className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                      <span className="text-[10px] text-slate-400 w-9 shrink-0">기본</span>
-                      {isEdit ? (
-                        <input
-                          autoFocus
-                          className="flex-1 text-sm border rounded px-2 py-0.5 bg-white dark:bg-slate-700 dark:text-white"
-                          value={editingVal}
-                          onChange={e => setEditingVal(e.target.value)}
-                          onBlur={() => commitEdit(item.id, false)}
-                          onKeyDown={e => { if (e.key === 'Enter') commitEdit(item.id, false); }}
-                        />
-                      ) : (
-                        <span className="flex-1 text-sm text-slate-700 dark:text-slate-200">
-                          {label}
-                          {progressLabels[item.id] && (
-                            <span className="text-[10px] text-slate-400 ml-1">(원: {item.defaultLabel})</span>
-                          )}
-                        </span>
-                      )}
-                      <button onClick={() => startEdit(item.id, label)} className="p-1 text-slate-400 hover:text-blue-500">
-                        <Edit2 size={12} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="space-y-1.5 mb-3">
-                {customItems.map(item => {
-                  const isEdit = editingId === item.id;
-                  return (
-                    <div key={item.id} className="flex items-center gap-2 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/10 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
-                      <span className="text-[10px] text-emerald-600 w-9 shrink-0">추가</span>
-                      {isEdit ? (
-                        <input
-                          autoFocus
-                          className="flex-1 text-sm border rounded px-2 py-0.5 bg-white dark:bg-slate-700 dark:text-white"
-                          value={editingVal}
-                          onChange={e => setEditingVal(e.target.value)}
-                          onBlur={() => commitEdit(item.id, true)}
-                          onKeyDown={e => { if (e.key === 'Enter') commitEdit(item.id, true); }}
-                        />
-                      ) : (
-                        <span className="flex-1 text-sm text-slate-700 dark:text-slate-200">{item.label}</span>
-                      )}
-                      <button onClick={() => startEdit(item.id, item.label)} className="p-1 text-slate-400 hover:text-blue-500">
-                        <Edit2 size={12} />
-                      </button>
-                      <button onClick={() => setCustomItems(prev => prev.filter(i => i.id !== item.id))} className="p-1 text-slate-400 hover:text-red-500">
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="새 항목 이름 (예: 간판, 전기)"
-                  value={newLabel}
-                  onChange={e => setNewLabel(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') addCustom(); }}
-                  className="flex-1 text-sm px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-white"
-                />
-                <button onClick={addCustom} className="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-1 text-sm font-semibold">
-                  <Plus size={14} /> 추가
-                </button>
-              </div>
-            </section>
-
           </div>
         )}
 

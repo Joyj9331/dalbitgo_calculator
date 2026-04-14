@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { salesDb as db, db as mainDb, auth } from '../../firebase';
 import { collection, getDocs, doc, deleteDoc, updateDoc, addDoc, getDoc, setDoc } from 'firebase/firestore';
 import { FranchiseSchedule, TeamSetting, BrandId } from '../../types';
-import { Plus, Search, Settings, CheckCircle2, Eye, EyeOff, X, Layers, CheckCheck, Sparkles, Bot, Send, User as UserIcon, CalendarDays, AlertTriangle, FileText } from 'lucide-react';
+import { Plus, Search, Settings, CheckCircle2, Eye, EyeOff, X, Layers, CheckCheck, Sparkles, Bot, Send, User as UserIcon, CalendarDays, AlertTriangle, FileText, CheckSquare } from 'lucide-react';
 import { useToast } from '../Toast';
 import { useConfirm } from '../ConfirmModal';
 import { GoogleGenAI } from '@google/genai';
@@ -12,11 +12,11 @@ import { ScheduleTimeline } from './ScheduleTimeline';
 import { ScheduleCalendar } from './ScheduleCalendar';
 import { ScheduleFormModal } from './ScheduleFormModal';
 import { TeamSettingsModal } from './TeamSettingsModal';
+import { OpenChecklistView } from './OpenChecklistView';
 import {
   ProcessMasterModal,
   ProcessSettings,
   DEFAULT_PROCESS_SETTINGS,
-  BUILTIN_PROGRESS,
 } from './ProcessMasterModal';
 
 interface Props {
@@ -33,6 +33,7 @@ export function FranchiseScheduleView({ brandId }: Props) {
   const [loading, setLoading] = useState(true);
 
   // View states
+  const [viewTab, setViewTab] = useState<'schedule' | 'checklist'>('schedule');
   const [showArchived, setShowArchived] = useState(false);
   const [monthsView, setMonthsView] = useState<1 | 2>(1);
   const [search, setSearch] = useState('');
@@ -168,17 +169,25 @@ export function FranchiseScheduleView({ brandId }: Props) {
     }
   };
 
-  const handleToggleProgress = async (id: string, key: keyof FranchiseSchedule['progressCheck'], currentVal: boolean) => {
+  const handleUpdateProgress = async (scheduleId: string, checkId: string, isCustom: boolean, currentVal: boolean) => {
     try {
-      const schedule = schedules.find(s => s.id === id);
+      const schedule = schedules.find(s => s.id === scheduleId);
       if (!schedule) return;
-      const newProgress = {
-        ...(schedule.progressCheck || { drawingUpload: false, ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
-        [key]: !currentVal
-      };
-      setSchedules(prev => prev.map(x => x.id === id ? { ...x, progressCheck: newProgress } : x));
-      await updateDoc(doc(db, 'franchise_schedules', id), { progressCheck: newProgress });
-      await logActivity('진행 체크', `[${schedule.storeName}] 진행 항목 체크 상태 변경`);
+
+      if (isCustom) {
+        const newProgress = { ...((schedule as any).customProgressCheck || {}), [checkId]: !currentVal };
+        setSchedules(prev => prev.map(x => x.id === scheduleId ? { ...x, customProgressCheck: newProgress } : x));
+        await updateDoc(doc(db, 'franchise_schedules', scheduleId), { [`customProgressCheck.${checkId}`]: !currentVal });
+        await logActivity('진행 체크', `[${schedule.storeName}] 커스텀 진행 항목 상태 변경`);
+      } else {
+        const newProgress = {
+          ...(schedule.progressCheck || { drawingUpload: false, ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
+          [checkId]: !currentVal
+        };
+        setSchedules(prev => prev.map(x => x.id === scheduleId ? { ...x, progressCheck: newProgress as any } : x));
+        await updateDoc(doc(db, 'franchise_schedules', scheduleId), { progressCheck: newProgress });
+        await logActivity('진행 체크', `[${schedule.storeName}] 진행 항목 상태 변경`);
+      }
       fetchData(true);
     } catch(e) { console.error(e); }
   };
@@ -217,6 +226,15 @@ export function FranchiseScheduleView({ brandId }: Props) {
   // 💡 도면 미입력 매장 감지
   const missingDrawings = useMemo(() => {
     return schedules.filter(s => !s.archived && s.storeName && !s.finalDrawingPdfUrl);
+  }, [schedules]);
+
+  // 💡 교육비 미입금 매장 감지
+  const unpaidSchedules = useMemo(() => {
+    return schedules.filter(s => {
+      if (s.archived) return false;
+      const data = (s as any).checklistData || {};
+      return Object.values(data).some((item: any) => item.note8 === '미입금');
+    });
   }, [schedules]);
 
   const CHAT_QUESTIONS = useMemo(() => {
@@ -734,6 +752,23 @@ ${transcript}`;
         </div>
        )}
 
+       {/* 🚨 교육비 미입금 경고 배너 */}
+       {unpaidSchedules.length > 0 && (
+        <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-xl p-4 flex items-start gap-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+          <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={18} />
+          <div className="flex-1">
+            <h4 className="text-sm font-bold text-rose-800 dark:text-rose-400 mb-2 tracking-tight">사전 교육비 미입금 매장이 있습니다.</h4>
+            <div className="flex flex-wrap gap-2">
+              {unpaidSchedules.map(s => (
+                <button key={`up-${s.id}`} onClick={() => { setViewTab('checklist'); }} className="text-xs font-bold bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 px-2.5 py-1.5 rounded-md border border-rose-100 dark:border-rose-700/50 shadow-sm hover:bg-rose-100 dark:hover:bg-slate-700 transition-colors text-left flex items-center gap-1">
+                  {s.storeName} [{s.storeNumber || '호수미정'}] 입금 확인 <span className="opacity-50 ml-0.5">&rarr;</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+       )}
+
        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
          <div>
            <h1 className="text-xl font-black text-stone-900 dark:text-white flex items-center gap-2 tracking-tight">
@@ -743,22 +778,40 @@ ${transcript}`;
            <p className="text-sm font-medium text-stone-500 mt-1.5">AI 대화 또는 수동 입력을 통해 일정을 상세 관리할 수 있습니다.</p>
          </div>
 
-         <div className="flex flex-wrap items-center gap-2">
-            <button onClick={openAiChat} className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 text-sm font-bold rounded-sm hover:bg-indigo-100 transition-colors shadow-sm">
-               <Bot size={15} /> AI 일정 자동 작성
+         {/* 💡 뷰 전환 탭 */}
+         <div className="flex bg-stone-100 dark:bg-stone-800 p-1 rounded-lg border border-stone-200 dark:border-stone-700">
+           <button
+             onClick={() => setViewTab('schedule')}
+             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${viewTab === 'schedule' ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+           >
+             <CalendarDays size={15} /> 캘린더
+           </button>
+           <button
+             onClick={() => setViewTab('checklist')}
+             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${viewTab === 'checklist' ? 'bg-white dark:bg-stone-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+           >
+             <CheckSquare size={15} /> 체크리스트
+           </button>
+         </div>
+
+         <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar pb-2 md:pb-0 w-full md:w-auto snap-x md:flex-wrap">
+            <button onClick={() => { setEditingData({}); setShowForm(true); }} className="shrink-0 snap-start flex items-center gap-1.5 px-3 py-2 bg-stone-900 text-white text-sm font-bold rounded-sm hover:bg-stone-800 transition-colors shadow-sm">
+               <Plus size={15} /> 신규 일정 등록
             </button>
-            <button onClick={() => setShowProcessMaster(true)} className="flex items-center gap-1.5 px-3 py-2 bg-white text-stone-700 border border-stone-300 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-300 text-sm font-bold rounded-sm hover:bg-stone-100 transition-colors shadow-sm">
+            <button onClick={openAiChat} className="shrink-0 snap-start flex items-center gap-1.5 px-3 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 text-sm font-bold rounded-sm hover:bg-indigo-100 transition-colors shadow-sm">
+               <Bot size={15} /> AI 자동 작성
+            </button>
+            <button onClick={() => setShowProcessMaster(true)} className="shrink-0 snap-start flex items-center gap-1.5 px-3 py-2 bg-white text-stone-700 border border-stone-300 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-300 text-sm font-bold rounded-sm hover:bg-stone-100 transition-colors shadow-sm">
                <Layers size={15} /> 공정 마스터
             </button>
-            <button onClick={() => setShowTeamSettings(true)} className="flex items-center gap-1.5 px-3 py-2 bg-white text-stone-700 border border-stone-300 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-300 text-sm font-bold rounded-sm hover:bg-stone-100 transition-colors shadow-sm">
+            <button onClick={() => setShowTeamSettings(true)} className="shrink-0 snap-start flex items-center gap-1.5 px-3 py-2 bg-white text-stone-700 border border-stone-300 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-300 text-sm font-bold rounded-sm hover:bg-stone-100 transition-colors shadow-sm">
                <Settings size={15} /> 팀/권역 설정
-            </button>
-            <button onClick={() => { setEditingData({}); setShowForm(true); }} className="flex items-center gap-1.5 px-3 py-2 bg-stone-900 text-white text-sm font-bold rounded-sm hover:bg-stone-800 transition-colors shadow-sm">
-               <Plus size={15} /> 신규 일정 등록
             </button>
          </div>
        </div>
 
+       {viewTab === 'schedule' ? (
+         <>
        <div className="bg-[#FDFBF7] dark:bg-stone-900 p-4 rounded-sm border border-stone-300 dark:border-stone-800 flex flex-col md:flex-row items-center justify-between gap-4">
          <div className="flex items-center gap-2 w-full md:w-auto">
             <div className="flex bg-stone-200 dark:bg-stone-800 p-1 rounded-sm border border-stone-300 dark:border-stone-700">
@@ -846,6 +899,9 @@ ${transcript}`;
                                 <div className={`w-3 h-3 rounded-full flex-shrink-0 bg-${sch.colorCode || 'slate'}-500 shadow-sm`} />
                                 <span className="font-black text-xl tracking-tight text-stone-900 dark:text-white group-hover:text-stone-600 transition-colors truncate">{sch.storeName}</span>
                                 <span className="text-[10px] font-bold text-stone-500 border border-stone-300 dark:border-stone-700 px-1.5 py-0.5 rounded-sm shrink-0">{sch.storeNumber || '호수 미정'}</span>
+                                {Object.values((sch as any).checklistData || {}).some((item: any) => item.note8 === '미입금') && (
+                                  <span className="text-[10px] font-bold text-rose-600 bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-sm shrink-0 shadow-sm">미입금</span>
+                                )}
                               </div>
                               <div className="text-xs text-stone-500 font-bold ml-5 tracking-widest flex items-center gap-3">
                                 <span>{sch.team || '팀 미정'}</span>
@@ -879,49 +935,6 @@ ${transcript}`;
                             </div>
                           </div>
                           
-                          {/* Progress Badges */}
-                          <div className="mb-4">
-                            <p className="text-[10px] font-bold text-stone-400 dark:text-stone-500 mb-1.5 tracking-widest">진행 상황</p>
-                            <div className="flex gap-1.5 flex-wrap">
-                               {BUILTIN_PROGRESS.map(p => {
-                                 const label = processSettings.progressLabels[p.id] ?? p.defaultLabel;
-                                 const checked = sch.progressCheck?.[p.id as keyof FranchiseSchedule['progressCheck']] || false;
-                                 return (
-                                   <button
-                                     key={p.id}
-                                     onClick={() => handleToggleProgress(sch.id, p.id as any, checked)}
-                                     className={`flex items-center gap-1 px-2 py-1 rounded-sm transition-colors border ${checked ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-400 dark:bg-stone-300 dark:text-stone-900' : 'border-stone-300 bg-white text-stone-400 hover:border-stone-400'}`}
-                                     title={label}
-                                   >
-                                     <CheckCircle2 size={12} className={checked ? '' : 'opacity-30'} />
-                                     <span className="text-[10px] font-bold">{label}</span>
-                                   </button>
-                                 );
-                               })}
-                               {processSettings.customItems.map(ci => {
-                                 const checked = (sch as any).customProgressCheck?.[ci.id] || false;
-                                 return (
-                                   <button
-                                     key={ci.id}
-                                     onClick={async () => {
-                                       setSchedules(prev => prev.map(x => x.id === sch.id ? { ...x, customProgressCheck: { ...(x as any).customProgressCheck, [ci.id]: !checked } } : x));
-                                       await updateDoc(doc(db, 'franchise_schedules', sch.id), {
-                                         [`customProgressCheck.${ci.id}`]: !checked,
-                                       });
-                                       await logActivity('진행 체크', `[${sch.storeName}] 커스텀 진행 항목 상태 변경`);
-                                       fetchData(true);
-                                     }}
-                                     className={`flex items-center gap-1 px-2 py-1 rounded-sm transition-colors border ${checked ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-400 dark:bg-stone-300 dark:text-stone-900' : 'border-stone-300 bg-white text-stone-400 hover:border-stone-400'}`}
-                                     title={ci.label}
-                                   >
-                                     <CheckCircle2 size={12} className={checked ? '' : 'opacity-30'} />
-                                     <span className="text-[10px] font-bold">{ci.label}</span>
-                                   </button>
-                                 );
-                               })}
-                            </div>
-                          </div>
-
                           {/* Info Grid */}
                           <div className="mt-auto bg-white dark:bg-stone-800/50 rounded-sm border border-stone-300 p-4 space-y-3 text-xs">
                              <div className="flex justify-between items-center">
@@ -962,6 +975,24 @@ ${transcript}`;
               )}
            </div>
         )}
+        </>
+      ) : (
+        <OpenChecklistView 
+          schedules={schedules} 
+          processSettings={processSettings} 
+          onUpdateProgress={handleUpdateProgress} 
+          onUpdateSchedule={async (id, data) => {
+            setSchedules(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
+            await updateDoc(doc(db, 'franchise_schedules', id), data);
+            await logActivity('체크리스트 업데이트', `오픈 체크리스트 상세 항목 및 일정 동기화`);
+            fetchData(true);
+          }}
+          onUpdateMasterList={async (list) => {
+             setProcessSettings(prev => ({ ...prev, masterChecklist: list }));
+             await updateDoc(doc(db, 'process_settings', brandId), { masterChecklist: list });
+          }}
+        />
+      )}
 
         {showForm && (
           <ScheduleFormModal initial={editingData || {}} teams={teams} schedules={schedules} processSettings={processSettings} onSave={handleSaveSchedule} onClose={() => { setShowForm(false); setEditingData(null); }} />

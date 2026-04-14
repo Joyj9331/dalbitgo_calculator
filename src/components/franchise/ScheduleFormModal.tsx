@@ -3,7 +3,7 @@ import { FranchiseSchedule, TeamSetting } from '../../types';
 import { X, Calculator, AlertCircle, Palette, Eye, EyeOff, FileText, UploadCloud, Loader2 } from 'lucide-react';
 import { useToast } from '../Toast';
 import { addDays, diffDays, addExcludingSunday, getOvenInDate, getPreTrainingStartDate } from '../../utils';
-import { BUILTIN_PROGRESS, ProcessSettings } from './ProcessMasterModal';
+import { ProcessSettings } from './ProcessMasterModal';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../../firebase';
 
@@ -208,36 +208,41 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
   const labelCls = "block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1";
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-5xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[95vh]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
-          <div className="flex items-center gap-4">
-             <h2 className="text-lg font-bold text-slate-900 dark:text-white">가맹점 일정 상세 정보</h2>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 md:p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-none md:rounded-2xl shadow-xl w-full max-w-5xl border-0 md:border border-slate-200 dark:border-slate-800 flex flex-col h-full md:h-auto md:max-h-[95vh]">
+        <div className="flex flex-wrap items-center justify-between px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0 gap-2">
+          <div className="flex flex-wrap items-center gap-2 md:gap-4 w-full md:w-auto">
+             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex-1 md:flex-none">가맹점 일정 상세 정보</h2>
+             <button onClick={onClose} className="md:hidden p-1.5 rounded-md text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+               <X size={18} />
+             </button>
              
-             <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1 rounded-full ml-2">
-               <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-                 <input type="checkbox" checked={autoCalc} onChange={e => setAutoCalc(e.target.checked)} className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-600" />
-                 일정 자동 계산
-               </label>
-             </div>
+             <div className="flex items-center gap-2 w-full md:w-auto mt-2 md:mt-0">
+               <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1.5 rounded-full flex-1 md:flex-none justify-center">
+                 <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
+                   <input type="checkbox" checked={autoCalc} onChange={e => setAutoCalc(e.target.checked)} className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-600" />
+                   일정 자동 계산
+                 </label>
+               </div>
 
-             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">캘린더 노출</span>
-                <button 
-                  type="button"
-                  onClick={() => set('showInCalendar', !form.showInCalendar)}
-                  className={`p-1 rounded-md transition-colors ${form.showInCalendar ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'text-slate-400 bg-slate-200 dark:bg-slate-700'}`}
-                >
-                  {form.showInCalendar ? <Eye size={16} /> : <EyeOff size={16} />}
-                </button>
+               <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full flex-1 md:flex-none justify-center">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">캘린더 노출</span>
+                  <button 
+                    type="button"
+                    onClick={() => set('showInCalendar', !form.showInCalendar)}
+                    className={`p-1 rounded-md transition-colors ${form.showInCalendar ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/30' : 'text-slate-400 bg-slate-200 dark:bg-slate-700'}`}
+                  >
+                    {form.showInCalendar ? <Eye size={14} /> : <EyeOff size={14} />}
+                  </button>
+               </div>
              </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-md text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <button onClick={onClose} className="hidden md:block p-1.5 rounded-md text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
             <X size={18} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-6 space-y-8">
+        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-4 md:p-6 space-y-6 md:space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="md:col-span-1">
               <label className={labelCls}>매장 호수 *</label>
@@ -411,62 +416,21 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
             </div>
           </div>
 
-          <div className="bg-slate-900 dark:bg-slate-950 p-6 rounded-2xl text-white">
-            <h3 className="text-sm font-bold mb-4 flex items-center gap-2 text-slate-400 uppercase tracking-wider">
-              <Calculator size={16} /> 진행 관리 프로세스
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {BUILTIN_PROGRESS.map(item => {
-                const label = processSettings?.progressLabels?.[item.id] ?? item.defaultLabel;
-                const checked = form.progressCheck?.[item.id as keyof typeof form.progressCheck] || false;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setProgress(item.id as any, !checked)}
-                    className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all group ${checked ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-800 bg-slate-800/50 hover:bg-slate-800 text-slate-400'}`}
-                  >
-                    <div className={`w-5 h-5 mb-3 rounded border flex items-center justify-center ${checked ? 'bg-white text-blue-600 border-white' : 'border-slate-700'}`}>
-                      {checked && <div className="w-2.5 h-2.5 bg-blue-600 rounded-sm" />}
-                    </div>
-                    <span className="text-xs font-bold">{label}</span>
-                  </button>
-                );
-              })}
-              {processSettings?.customItems?.map(item => {
-                const checked = (form as any).customProgressCheck?.[item.id] || false;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setCustomProgress(item.id, !checked)}
-                    className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all group ${checked ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-800 bg-slate-800/50 hover:bg-slate-800 text-slate-400'}`}
-                  >
-                    <div className={`w-5 h-5 mb-3 rounded border flex items-center justify-center ${checked ? 'bg-white text-emerald-600 border-white' : 'border-slate-700'}`}>
-                      {checked && <div className="w-2.5 h-2.5 bg-emerald-600 rounded-sm" />}
-                    </div>
-                    <span className="text-xs font-bold">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           <div className="space-y-2">
             <label className={labelCls}>특이사항 메모</label>
             <textarea className={`${inputCls} min-h-[80px]`} placeholder="매장 특이사항 및 전달사항 입력" value={form.notes || ''} onChange={e => set('notes', e.target.value)} />
           </div>
         </form>
 
-        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center shrink-0">
-          <div className="text-[10px] text-slate-400 font-medium italic">
-            * 모든 날짜는 자동 계산되지만 수동 변경이 가능합니다. 색상은 현재 진행 중인 타 매장과 중복되지 않게 배정됩니다.
+        <div className="sticky bottom-0 bg-white dark:bg-slate-900 px-4 md:px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between md:items-center shrink-0 z-10 pb-safe md:pb-4 gap-3">
+          <div className="text-[10px] text-slate-400 font-medium italic text-center md:text-left">
+            * 모든 날짜는 자동 계산되지만 수동 변경이 가능합니다. 색상은 중복되지 않게 배정됩니다.
           </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 rounded-lg">
+          <div className="flex gap-2 w-full md:w-auto">
+            <button type="button" onClick={onClose} className="flex-1 md:flex-none px-4 py-3 md:py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 md:border-none">
               취소
             </button>
-            <button type="submit" disabled={saving || isDuplicateStoreNumber} onClick={handleSubmit as any} className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-bold shadow-lg shadow-blue-500/20">
+            <button type="submit" disabled={saving || isDuplicateStoreNumber} onClick={handleSubmit as any} className="flex-1 md:flex-none px-6 py-3 md:py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-bold shadow-lg shadow-blue-500/20">
               {saving ? '저장 중...' : '상세 일정 저장'}
             </button>
           </div>

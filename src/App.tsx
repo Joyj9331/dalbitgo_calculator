@@ -21,7 +21,6 @@ import { StoreManagement } from './components/StoreManagement';
 import { MarketingDashboard } from './components/marketing';
 import { SalesDashboard } from './components/sales/SalesDashboard';
 import { FranchiseScheduleView } from './components/franchise';
-import { OpenChecklistView } from './components/franchise';
 import { useToast } from './components/Toast';
 import { useConfirm } from './components/ConfirmModal';
 import {
@@ -47,7 +46,7 @@ enum OperationType {
 }
 
 type CostTabType = Region | '전체보기' | '메뉴 관리' | '변동사항';
-type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing' | 'franchise' | 'checklist';
+type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing' | 'franchise';
 
 interface SidebarState {
   brandId: BrandId | null;
@@ -1097,7 +1096,6 @@ export default function App() {
     { id: 'sales' as SidebarSection, label: '매출 현황', icon: <BarChart2 size={14} /> },
     { id: 'review' as SidebarSection, label: '가맹점 관제', icon: <ShieldAlert size={14} /> },
     { id: 'franchise' as SidebarSection, label: '오픈 일정', icon: <CalendarDays size={14} /> },
-    { id: 'checklist' as SidebarSection, label: '오픈 체크리스트', icon: <CheckSquare size={14} /> },
     { id: 'marketing' as SidebarSection, label: '마케팅 봇', icon: <Bot size={14} /> },
   ];
 
@@ -1471,11 +1469,6 @@ export default function App() {
               {/* 오픈 일정 */}
               {sidebar.section === 'franchise' && sidebar.brandId && (
                 <FranchiseScheduleView brandId={sidebar.brandId} />
-              )}
-
-              {/* 오픈 체크리스트 */}
-              {sidebar.section === 'checklist' && sidebar.brandId && (
-                <OpenChecklistView brandId={sidebar.brandId} />
               )}
 
               {/* 마케팅 봇 */}
