@@ -49,6 +49,8 @@ interface RoiData {
   세팅된_키워드: string;
   네이버_월간_총검색량: string;
   키워드_적중률: string;
+  추천_키워드?: string;
+  추천_근거?: string;
 }
 
 interface CompetitorData {
@@ -852,6 +854,21 @@ function MarketingTab({ rankData, roiData }: { rankData: RankData[]; roiData: Ro
                 </div>
               ))}
             </div>
+            {storeRoi.추천_키워드 && storeRoi.추천_키워드 !== '-' && (
+              <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
+                <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">추천 키워드 (교체 후보)</p>
+                <div className="flex flex-wrap gap-2">
+                  {storeRoi.추천_키워드.split(',').map(kw => kw.trim()).filter(Boolean).map(kw => (
+                    <span key={kw} className="px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-xs font-medium rounded-full">{kw}</span>
+                  ))}
+                </div>
+                {storeRoi.추천_근거 && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    <span className="font-semibold text-slate-600 dark:text-slate-300">근거: </span>{storeRoi.추천_근거}
+                  </p>
+                )}
+              </div>
+            )}
             {storeRanks.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">키워드별 네이버 플레이스 순위</p>
