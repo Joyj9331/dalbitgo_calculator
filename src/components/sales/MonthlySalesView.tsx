@@ -280,7 +280,7 @@ export function MonthlySalesView({ activeBrand }: { activeBrand: string | null }
             </div>
             <div className={isFullscreen ? "flex-1 w-full min-h-0 overflow-x-auto overflow-y-hidden" : "h-[400px] w-full"}>
               <div className="h-full min-h-[300px]" style={{ minWidth: isFullscreen && chartData.length > 12 ? `${chartData.length * 80}px` : '100%' }}>
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" debounce={50} minWidth={300} minHeight={300}>
                 <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                   <XAxis dataKey="yearMonth" tick={{fontSize: 12}} tickMargin={10} stroke="#94a3b8" />

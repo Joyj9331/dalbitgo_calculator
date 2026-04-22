@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Store, ArrowLeft, CheckSquare, Search, Printer, Settings, Plus, Trash2, FileText, UploadCloud, GripVertical, Check, Info, CheckCircle2, X, Eye, EyeOff, Lock, Unlock } from 'lucide-react';
-import { FranchiseSchedule } from '../../types';
+import { FranchiseSchedule, FileAttachment } from '../../types';
 import { ProcessSettings } from './ProcessMasterModal';
 import { useToast } from '../Toast';
 import { useConfirm } from '../ConfirmModal';
-import { uploadBytes, ref, getDownloadURL } from 'firebase/storage';
+import { uploadBytes, ref, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage, db } from '../../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -186,26 +186,61 @@ export function OpenChecklistView({ schedules, processSettings, onUpdateSchedule
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: string) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedStore) return;
-    
-    setUploadingItem(itemId);
-    toast.success('파일을 업로드 중입니다...');
+  // 기존 fileUrl 단일 필드 → files 배열로 하위 호환 변환
+  const getItemFiles = (itemData: any): FileAttachment[] => {
+    if (itemData?.files?.length) return itemData.files;
+    if (itemData?.fileUrl) return [{ url: itemData.fileUrl, name: '첨부파일' }];
+    return [];
+  };
+
+  const handleFileDelete = async (itemId: string, fileUrl: string) => {
+    if (!selectedStore) return;
     try {
-      const fileRef = ref(storage, `checklist_files/${selectedStore.id}_${itemId}_${Date.now()}_${file.name}`);
-      await uploadBytes(fileRef, file);
-      const url = await getDownloadURL(fileRef);
-      handleUpdateItem(itemId, 'fileUrl', url, 'file');
-      handleUpdateItem(itemId, 'status', 3, 'file'); // 업로드 시 자동 완료 처리
-      
-      // 💡 도면 캘린더 화면 동기화 연동
-      if (itemId === 'item_18') {
-         onUpdateSchedule(selectedStore.id, {
-            finalDrawingPdfUrl: url,
-            progressCheck: { ...(selectedStore.progressCheck || {}), drawingUpload: true } as any
-         });
+      const path = decodeURIComponent(fileUrl.split('/o/')[1].split('?')[0]);
+      await deleteObject(ref(storage, path));
+    } catch {
+      // Storage 삭제 실패해도 Firestore 데이터는 초기화
+    }
+    const currentData = getStoreData(selectedStore);
+    const itemData = currentData[itemId] || { status: 0 };
+    const newFiles = getItemFiles(itemData).filter(f => f.url !== fileUrl);
+    const newItemData = { ...itemData, files: newFiles, fileUrl: undefined, status: newFiles.length === 0 ? 0 : itemData.status };
+    onUpdateSchedule(selectedStore.id, {
+      checklistData: { ...currentData, [itemId]: newItemData }
+    });
+    toast.success('파일이 삭제되었습니다.');
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, itemId: string) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    if (selectedFiles.length === 0 || !selectedStore) return;
+    // input 초기화 (같은 파일 재선택 가능하도록)
+    e.target.value = '';
+
+    setUploadingItem(itemId);
+    toast.success(`${selectedFiles.length}개 파일을 업로드 중입니다...`);
+    try {
+      const uploadedAttachments: FileAttachment[] = [];
+      for (const file of selectedFiles) {
+        const fileRef = ref(storage, `checklist_files/${selectedStore.id}_${itemId}_${Date.now()}_${file.name}`);
+        await uploadBytes(fileRef, file);
+        const url = await getDownloadURL(fileRef);
+        uploadedAttachments.push({ url, name: file.name });
       }
+
+      const currentData = getStoreData(selectedStore);
+      const itemData = currentData[itemId] || { status: 0 };
+      const currentFiles = getItemFiles(itemData);
+      const newFiles = [...currentFiles, ...uploadedAttachments];
+      const newItemData = { ...itemData, files: newFiles, fileUrl: undefined, status: 3 };
+
+      const updates: any = { checklistData: { ...currentData, [itemId]: newItemData } };
+      // 💡 도면(item_18) 캘린더 동기화
+      if (itemId === 'item_18') {
+        updates.finalDrawingPdfUrl = uploadedAttachments[0].url;
+        updates.progressCheck = { ...(selectedStore.progressCheck || {}), drawingUpload: true };
+      }
+      onUpdateSchedule(selectedStore.id, updates);
       toast.success('파일이 성공적으로 첨부되었습니다.');
     } catch (err) {
       toast.error('파일 업로드에 실패했습니다.');
@@ -331,24 +366,40 @@ export function OpenChecklistView({ schedules, processSettings, onUpdateSchedule
 
                     let inputHtml;
                     if (item.type === 'file' || item.type === 'email') {
+                      const attachedFiles = getItemFiles(itemData);
                       inputHtml = (
-                        <div className="flex items-center gap-2 w-full">
-                          <input type="text" placeholder={item.type === 'email' ? "이메일 주소 입력" : "관련 링크/메모 입력"} className="flex-1 min-w-0 text-sm border-slate-200 dark:border-slate-700 rounded border px-2 py-2 md:py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800" value={itemData.note1 || ''} onChange={e => handleUpdateItem(item.id, 'note1', e.target.value, item.type)} />
-                          {item.type === 'file' && (
-                            <>
-                          {/* 📎 숨겨진 파일첨부 인풋 & 라벨 버튼 */}
-                          <input type="file" id={`file-${item.id}`} className="hidden" onChange={(e) => handleFileUpload(e, item.id)} />
-                          <label htmlFor={`file-${item.id}`} className="shrink-0 p-2 md:p-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded cursor-pointer transition-colors print:hidden" title="파일 첨부">
-                            {uploadingItem === item.id ? <span className="animate-spin inline-block">⏳</span> : <UploadCloud size={16} />}
-                          </label>
-                          
-                          {/* 첨부된 파일이 있으면 링크 표시 */}
-                          {itemData.fileUrl && (
-                            <a href={itemData.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-blue-600 hover:text-blue-800 underline underline-offset-2 ml-1 shrink-0 flex items-center gap-1 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">
-                               <FileText size={14} /> <span className="hidden sm:inline">첨부 파일 보기</span>
-                            </a>
+                        <div className="flex flex-col gap-1 w-full">
+                          <div className="flex items-center gap-2">
+                            <input type="text" placeholder={item.type === 'email' ? "이메일 주소 입력" : "메모 입력"} className="flex-1 min-w-0 text-sm border-slate-200 dark:border-slate-700 rounded border px-2 py-2 md:py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800" value={itemData.note1 || ''} onChange={e => handleUpdateItem(item.id, 'note1', e.target.value, item.type)} />
+                            {item.type === 'file' && (
+                              <>
+                                <input type="file" id={`file-${item.id}`} className="hidden" multiple onChange={(e) => handleFileUpload(e, item.id)} />
+                                <label htmlFor={`file-${item.id}`} className="shrink-0 p-2 md:p-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded cursor-pointer transition-colors print:hidden" title="파일 첨부 (다중 선택 가능)">
+                                  {uploadingItem === item.id ? <span className="animate-spin inline-block text-sm">⏳</span> : <UploadCloud size={16} />}
+                                </label>
+                              </>
+                            )}
+                          </div>
+                          {attachedFiles.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 print:hidden">
+                              {attachedFiles.map((f, i) => (
+                                <div key={i} className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-md px-2 py-1 max-w-[240px]">
+                                  <FileText size={11} className="text-blue-500 shrink-0" />
+                                  <a href={f.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 dark:text-blue-400 truncate hover:underline" title={f.name}>{f.name}</a>
+                                  <button onClick={() => handleFileDelete(item.id, f.url)} className="shrink-0 p-0.5 text-rose-400 hover:text-rose-600 ml-0.5" title="삭제">
+                                    <X size={11} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
                           )}
-                            </>
+                          {/* 인쇄용 파일 목록 */}
+                          {attachedFiles.length > 0 && (
+                            <div className="hidden print:flex flex-wrap gap-1">
+                              {attachedFiles.map((f, i) => (
+                                <span key={i} className="text-xs text-blue-700 underline">{f.name}</span>
+                              ))}
+                            </div>
                           )}
                         </div>
                       );
@@ -409,19 +460,39 @@ export function OpenChecklistView({ schedules, processSettings, onUpdateSchedule
                         </div>
                       );
                     } else if (item.type === 'file_date') {
+                      const attachedFiles = getItemFiles(itemData);
                       inputHtml = (
-                        <div className="flex flex-col md:flex-row md:items-center gap-2 w-full">
-                           <input type="date" className="flex-none w-full md:w-[130px] text-sm font-bold text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 rounded border px-2 py-2 md:py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800" value={itemData.note3 || ''} onChange={e => handleUpdateItem(item.id, 'note3', e.target.value, item.type)} />
-                           <div className="flex items-center gap-2 flex-1 min-w-0">
-                             <input type="text" placeholder="관련 링크/메모 입력" className="flex-1 min-w-0 text-sm border-slate-200 dark:border-slate-700 rounded border px-2 py-2 md:py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800" value={itemData.note1 || ''} onChange={e => handleUpdateItem(item.id, 'note1', e.target.value, item.type)} />
-                             <input type="file" id={`file-${item.id}`} className="hidden" onChange={(e) => handleFileUpload(e, item.id)} />
-                             <label htmlFor={`file-${item.id}`} className="shrink-0 p-2 md:p-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded cursor-pointer transition-colors print:hidden" title="파일 첨부">
-                               {uploadingItem === item.id ? <span className="animate-spin inline-block">⏳</span> : <UploadCloud size={16} />}
-                             </label>
-                             {itemData.fileUrl && (
-                               <a href={itemData.fileUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-blue-600 hover:text-blue-800 underline ml-1 shrink-0 flex items-center gap-1 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded"><FileText size={14} /> 첨부 파일 보기</a>
-                             )}
-                           </div>
+                        <div className="flex flex-col gap-1 w-full">
+                          <div className="flex flex-col md:flex-row md:items-center gap-2">
+                            <input type="date" className="flex-none w-full md:w-[130px] text-sm font-bold text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 rounded border px-2 py-2 md:py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800" value={itemData.note3 || ''} onChange={e => handleUpdateItem(item.id, 'note3', e.target.value, item.type)} />
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <input type="text" placeholder="메모 입력" className="flex-1 min-w-0 text-sm border-slate-200 dark:border-slate-700 rounded border px-2 py-2 md:py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800" value={itemData.note1 || ''} onChange={e => handleUpdateItem(item.id, 'note1', e.target.value, item.type)} />
+                              <input type="file" id={`file-${item.id}`} className="hidden" multiple onChange={(e) => handleFileUpload(e, item.id)} />
+                              <label htmlFor={`file-${item.id}`} className="shrink-0 p-2 md:p-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded cursor-pointer transition-colors print:hidden" title="파일 첨부 (다중 선택 가능)">
+                                {uploadingItem === item.id ? <span className="animate-spin inline-block text-sm">⏳</span> : <UploadCloud size={16} />}
+                              </label>
+                            </div>
+                          </div>
+                          {attachedFiles.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 print:hidden">
+                              {attachedFiles.map((f, i) => (
+                                <div key={i} className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-md px-2 py-1 max-w-[240px]">
+                                  <FileText size={11} className="text-blue-500 shrink-0" />
+                                  <a href={f.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 dark:text-blue-400 truncate hover:underline" title={f.name}>{f.name}</a>
+                                  <button onClick={() => handleFileDelete(item.id, f.url)} className="shrink-0 p-0.5 text-rose-400 hover:text-rose-600 ml-0.5" title="삭제">
+                                    <X size={11} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {attachedFiles.length > 0 && (
+                            <div className="hidden print:flex flex-wrap gap-1">
+                              {attachedFiles.map((f, i) => (
+                                <span key={i} className="text-xs text-blue-700 underline">{f.name}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     } else if (item.type === 'password') {

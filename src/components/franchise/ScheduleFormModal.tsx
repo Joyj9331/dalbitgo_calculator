@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FranchiseSchedule, TeamSetting } from '../../types';
+import { FranchiseSchedule, TeamSetting, FileAttachment } from '../../types';
 import { X, Calculator, AlertCircle, Palette, Eye, EyeOff, FileText, UploadCloud, Loader2 } from 'lucide-react';
 import { useToast } from '../Toast';
 import { addDays, diffDays, addExcludingSunday, getOvenInDate, getPreTrainingStartDate } from '../../utils';
 import { ProcessSettings } from './ProcessMasterModal';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../../firebase';
 
 interface Props {
@@ -176,27 +176,58 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
     }
   };
 
-  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf') {
-      toast.error('PDF 파일만 업로드 가능합니다.');
-      return;
+  const getPdfs = (): FileAttachment[] => {
+    if ((form as any).finalDrawingPdfs?.length) return (form as any).finalDrawingPdfs;
+    if (form.finalDrawingPdfUrl) return [{ url: form.finalDrawingPdfUrl, name: '도면.pdf' }];
+    return [];
+  };
+
+  const handlePdfDelete = async (targetUrl: string) => {
+    try {
+      const path = decodeURIComponent(targetUrl.split('/o/')[1].split('?')[0]);
+      await deleteObject(ref(storage, path));
+    } catch {
+      // Storage 삭제 실패해도 폼 초기화
     }
+    const newPdfs = getPdfs().filter(f => f.url !== targetUrl);
+    setForm(prev => ({
+      ...prev,
+      finalDrawingPdfs: newPdfs,
+      finalDrawingPdfUrl: newPdfs[0]?.url,
+      progressCheck: {
+        ...(prev.progressCheck || { drawingUpload: false, ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
+        drawingUpload: newPdfs.length > 0
+      }
+    }));
+    toast.success('도면 파일이 삭제되었습니다.');
+  };
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    if (selectedFiles.length === 0) return;
+    e.target.value = '';
+    const nonPdf = selectedFiles.find(f => f.type !== 'application/pdf');
+    if (nonPdf) { toast.error('PDF 파일만 업로드 가능합니다.'); return; }
     setIsUploadingPdf(true);
     try {
-      const fileRef = ref(storage, `drawings/${Date.now()}_${file.name}`);
-      await uploadBytes(fileRef, file);
-      const url = await getDownloadURL(fileRef);
+      const uploaded: FileAttachment[] = [];
+      for (const file of selectedFiles) {
+        const fileRef = ref(storage, `drawings/${Date.now()}_${file.name}`);
+        await uploadBytes(fileRef, file);
+        const url = await getDownloadURL(fileRef);
+        uploaded.push({ url, name: file.name });
+      }
+      const newPdfs = [...getPdfs(), ...uploaded];
       setForm(prev => ({
         ...prev,
-        finalDrawingPdfUrl: url,
+        finalDrawingPdfs: newPdfs,
+        finalDrawingPdfUrl: newPdfs[0]?.url,
         progressCheck: {
           ...(prev.progressCheck || { drawingUpload: false, ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
           drawingUpload: true
         }
       }));
-      toast.success('도면이 업로드되었습니다.');
+      toast.success(`도면 ${uploaded.length}개가 업로드되었습니다.`);
     } catch (err) {
       toast.error('도면 업로드에 실패했습니다.');
     } finally {
@@ -403,15 +434,23 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
           <div className="space-y-2">
             <label className={labelCls}>최종 도면 (PDF)</label>
             <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
-              <input type="file" accept=".pdf" id="pdf-upload" className="hidden" onChange={handlePdfUpload} disabled={isUploadingPdf} />
-              <label htmlFor="pdf-upload" className="flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm font-bold border border-slate-200 dark:border-slate-700 shadow-sm">
+              <input type="file" accept=".pdf" id="pdf-upload" className="hidden" multiple onChange={handlePdfUpload} disabled={isUploadingPdf} />
+              <label htmlFor="pdf-upload" className="flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-sm font-bold border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
                 {isUploadingPdf ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
-                {isUploadingPdf ? '업로드 중...' : '도면 PDF 파일 첨부'}
+                {isUploadingPdf ? '업로드 중...' : 'PDF 첨부'}
               </label>
-              {form.finalDrawingPdfUrl && (
-                <a href={form.finalDrawingPdfUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-bold underline underline-offset-2 ml-2">
-                  <FileText size={14} /> 업로드된 도면 보기
-                </a>
+              {getPdfs().length > 0 && (
+                <div className="flex flex-wrap gap-1.5 flex-1">
+                  {getPdfs().map((f, i) => (
+                    <div key={i} className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-md px-2 py-1.5 max-w-[220px]">
+                      <FileText size={12} className="text-blue-500 shrink-0" />
+                      <a href={f.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 dark:text-blue-400 truncate hover:underline font-medium" title={f.name}>{f.name}</a>
+                      <button type="button" onClick={() => handlePdfDelete(f.url)} className="shrink-0 p-0.5 text-rose-400 hover:text-rose-600 ml-0.5" title="삭제">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>

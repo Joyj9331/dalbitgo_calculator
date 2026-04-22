@@ -1,4 +1,26 @@
 export type Region = '지방권' | '광역권' | '수도권';
+
+// ==========================================
+// 앱 네비게이션 타입
+// ==========================================
+
+export enum OperationType {
+  CREATE = 'create', UPDATE = 'update', DELETE = 'delete',
+  LIST = 'list', GET = 'get', WRITE = 'write',
+}
+
+export type CostTabType = Region | '전체보기' | '메뉴 관리' | '변동사항';
+export type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing' | 'franchise';
+
+export interface SidebarState {
+  brandId: BrandId | null;
+  section: SidebarSection;
+  costTab: CostTabType;
+  reviewTab?: string;
+}
+
+// 가맹점 관제 데이터가 있는 브랜드 (크롤러 연동 완료)
+export const REVIEW_ENABLED_BRANDS = ['dalbitgo'];
 export type Unit = 'kg' | 'g' | 'ea' | '미' | '수';
 export type BrandId = string;
 
@@ -201,7 +223,8 @@ export interface FranchiseSchedule {
   
   teamMembersSnapshot?: TeamMember[]; // 등록/수정 당시의 팀원 목록 스냅샷
 
-  finalDrawingPdfUrl?: string; // 💡 최종 도면 PDF 다운로드 URL
+  finalDrawingPdfUrl?: string; // 💡 최종 도면 PDF 다운로드 URL (첫 번째 도면 URL, 하위 호환)
+  finalDrawingPdfs?: FileAttachment[]; // 💡 다중 도면 파일 목록
 
   // 💡 오픈 체크리스트 연동 데이터
   checklist?: ChecklistItem[]; 
@@ -231,6 +254,11 @@ export interface TeamSetting {
 // 오픈 체크리스트 전용 데이터 타입
 // ==========================================
 
+export interface FileAttachment {
+  url: string;
+  name: string;
+}
+
 export type ChecklistItemType = 'normal' | 'staffing' | 'email' | 'training' | 'pdf' | 'date' | 'showcase' | 'food_waste' | 'secure_account';
 
 export interface ChecklistItem {
@@ -241,6 +269,7 @@ export interface ChecklistItem {
 
 export interface ChecklistItemData {
   status: number; // 0: 미진행, 1: 안내완료, 2: 진행중, 3: 완료
+  files?: FileAttachment[]; // 다중 파일 첨부
   note1?: string; // 일반 메모, 이메일, 홀 직원수, 교육 장소
   note2?: string; // 홀 파트수, 교육 장소(직접입력)
   note3?: string; // 주방 직원수, 교육 시작일
