@@ -202,9 +202,9 @@ export function OpenChecklistView({ schedules, processSettings, onUpdateSchedule
       // Storage 삭제 실패해도 Firestore 데이터는 초기화
     }
     const currentData = getStoreData(selectedStore);
-    const itemData = currentData[itemId] || { status: 0 };
-    const newFiles = getItemFiles(itemData).filter(f => f.url !== fileUrl);
-    const newItemData = { ...itemData, files: newFiles, fileUrl: undefined, status: newFiles.length === 0 ? 0 : itemData.status };
+    const { fileUrl: _old1, ...restItemData1 } = currentData[itemId] || { status: 0 };
+    const newFiles = getItemFiles(currentData[itemId] || {}).filter(f => f.url !== fileUrl);
+    const newItemData = { ...restItemData1, files: newFiles, status: newFiles.length === 0 ? 0 : (restItemData1.status ?? 0) };
     onUpdateSchedule(selectedStore.id, {
       checklistData: { ...currentData, [itemId]: newItemData }
     });
@@ -229,10 +229,10 @@ export function OpenChecklistView({ schedules, processSettings, onUpdateSchedule
       }
 
       const currentData = getStoreData(selectedStore);
-      const itemData = currentData[itemId] || { status: 0 };
-      const currentFiles = getItemFiles(itemData);
+      const { fileUrl: _old2, ...restItemData2 } = currentData[itemId] || { status: 0 };
+      const currentFiles = getItemFiles(currentData[itemId] || {});
       const newFiles = [...currentFiles, ...uploadedAttachments];
-      const newItemData = { ...itemData, files: newFiles, fileUrl: undefined, status: 3 };
+      const newItemData = { ...restItemData2, files: newFiles, status: 3 };
 
       const updates: any = { checklistData: { ...currentData, [itemId]: newItemData } };
       // 💡 도면(item_18) 캘린더 동기화

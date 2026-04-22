@@ -193,7 +193,7 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
     setForm(prev => ({
       ...prev,
       finalDrawingPdfs: newPdfs,
-      finalDrawingPdfUrl: newPdfs[0]?.url,
+      ...(newPdfs[0]?.url ? { finalDrawingPdfUrl: newPdfs[0].url } : { finalDrawingPdfUrl: '' }),
       progressCheck: {
         ...(prev.progressCheck || { drawingUpload: false, ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
         drawingUpload: newPdfs.length > 0
