@@ -52,7 +52,7 @@ export interface User {
   alertThresholdType?: 'percentage' | 'absolute';
   alertThresholdValue?: number;
   menuOrder?: string[];
-  departmentId?: string; // 소속 부서 ID
+  departmentIds?: string[]; // 다중 부서 지원
 }
 
 export type CostCalcMethod = 'purchase_divide' | 'sales_divide' | 'manual';
@@ -158,21 +158,6 @@ export interface DailySalesRecord {
   createdAt: string;
 }
 
-export interface MenuSalesRecord {
-  id: string;
-  brandId: BrandId;
-  yearMonth: string;       // 'YYYY-MM'
-  storeName: string;       // 원본 매장명 (달빛에구운고등어송천점)
-  storeShortName: string;  // 축약 매장명 (송천점)
-  category1: string;       // 대분류
-  menuName: string;        // 상품명
-  quantity: number;
-  totalSales: number;      // 총매출액
-  discount: number;        // 할인액
-  netSales: number;        // 실매출액
-  createdAt: string;
-}
-
 export interface MarketingSchedule {
   id: string;
   brandId?: BrandId;
@@ -187,6 +172,25 @@ export interface MarketingSchedule {
 // ==========================================
 // 가맹점 일정 관리 (Franchise Schedules)
 // ==========================================
+
+export interface FileAttachment {
+  url: string;
+  name: string;
+}
+
+export interface ChecklistItemData {
+  status: number;
+  note1?: string;
+  note2?: string;
+  note3?: string;
+  note4?: string;
+  note5?: string;
+  note6?: string;
+  note7?: string;
+  note8?: string;
+  files?: FileAttachment[];
+  fileUrl?: string;
+}
 export type ScheduleStatus = '계약완료' | '공사중' | '사전교육' | '인테리어완료' | '본교육' | '가오픈' | '오픈완료' | '보류';
 
 export interface FranchiseSchedule {
@@ -207,7 +211,7 @@ export interface FranchiseSchedule {
   // 자동 계산 및 관리 필드
   colorCode?: string;       // 매장 고유 색상 코드
   showInCalendar?: boolean; // 달력 노출 여부
-  gasType?: string;         // 가스 구분
+  softOpenDate?: string;    // 가오픈일
   ownerGuideStart: string;  // 점주 안내 시작
   equipmentIn: string;      // 화구류 입고일
   progressCheck: {
@@ -243,8 +247,9 @@ export interface FranchiseSchedule {
   finalDrawingPdfs?: FileAttachment[]; // 💡 다중 도면 파일 목록
 
   // 💡 오픈 체크리스트 연동 데이터
-  checklist?: ChecklistItem[]; 
   checklistData?: Record<string, ChecklistItemData>; 
+
+  customPhases?: { id: string; name: string; startDate: string; endDate?: string; type?: string }[];
 
   archived?: boolean;
 
@@ -266,86 +271,65 @@ export interface TeamSetting {
   createdAt?: string;
 }
 
+export type DepartmentTaskStatus = 'pending' | 'in_progress' | 'done' | 'blocked';
+
+export interface DepartmentTask {
+  id: string;
+  scheduleId: string;   // 매장(FranchiseSchedule) ID
+  brandId: string;
+  departmentId: string; // 담당 부서 ID
+  title: string;        // 업무명 (템플릿에서 복제)
+  status: DepartmentTaskStatus;
+  dueDate: string;      // 오픈일 기준 D-Day 계산된 날짜
+  dDayOffset: number;   // D-Day (예: -7, 0, 14)
+  note?: string;
+  completedBy?: string; // 완료 처리자 이름
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Department {
+  id: string;
+  brandId: string;
+  name: string;
+  color: string; // Tailwind 색상 클래스 (예: bg-blue-500)
+}
+
 // ==========================================
 // 오픈 체크리스트 전용 데이터 타입
 // ==========================================
 
-export interface FileAttachment {
-  url: string;
-  name: string;
-}
+export type WorkItemCategory = 'checklist' | 'schedule_date';
 
-export type ChecklistItemType = 'normal' | 'staffing' | 'email' | 'training' | 'pdf' | 'date' | 'showcase' | 'food_waste' | 'secure_account';
+export type WorkItemInputType = 
+  | 'date' 
+  | 'date_range' 
+  | 'location_select' 
+  | 'participant_count' 
+  | 'color_picker' 
+  | 'file' 
+  | 'phone' 
+  | 'hiorder' 
+  | 'showcase' 
+  | 'food_waste' 
+  | 'file_date' 
+  | 'staffing' 
+  | 'password' 
+  | 'email' 
+  | 'training_payment' 
+  | 'normal';
 
-export interface ChecklistItem {
+export interface WorkItem {
   id: string;
   text: string;
-  type: ChecklistItemType;
-}
-
-export interface ChecklistItemData {
-  status: number; // 0: 미진행, 1: 안내완료, 2: 진행중, 3: 완료
-  files?: FileAttachment[]; // 다중 파일 첨부
-  note1?: string; // 일반 메모, 이메일, 홀 직원수, 교육 장소
-  note2?: string; // 홀 파트수, 교육 장소(직접입력)
-  note3?: string; // 주방 직원수, 교육 시작일
-  note4?: string; // 주방 파트수, 교육 종료일
-  note5?: string; // 교육 시작시간
-  note6?: string; // 교육 종료시간
-  note7?: string; // 교육 인원
-  note8?: string; // 담당자
-  note9?: string; // 교육비 입금 상태 (사전교육) 등 추가 용도
-}
-
-// ==========================================
-// 부서별 태스크 관리 시스템
-// ==========================================
-
-/** 부서 정의 */
-export interface Department {
-  id: string;
-  brandId: BrandId;
-  name: string;    // 예: 마케팅팀, 가맹관리부, 경영지원부, 물류팀
-  color: string;   // Tailwind bg 색상 (예: bg-blue-500)
+  category: WorkItemCategory;
+  inputType: WorkItemInputType;
+  departmentId?: string;
+  departmentIds?: string[];
+  scheduleField?: keyof FranchiseSchedule;
+  calendarVisible?: boolean;
+  syncToField?: keyof FranchiseSchedule;
   order: number;
-  createdAt?: string;
-}
-
-/** 태스크 입력 타입 */
-export type TaskInputType = 'check' | 'text' | 'number' | 'date';
-
-/** 태스크 템플릿 (관리자가 설정) */
-export interface TaskTemplate {
-  id: string;
-  brandId: BrandId;
-  departmentId: string;
-  title: string;         // 예: 플레이스 생성, 냉동탑차 배차
-  description?: string;  // 상세 설명
-  dDayOffset: number;    // 오픈일 기준 (음수: 이전, 0: 당일, 양수: 이후)
-  inputType: TaskInputType;
-  order: number;
-  isActive: boolean;
-  createdAt?: string;
-}
-
-/** 태스크 상태 */
-export type DepartmentTaskStatus = 'pending' | 'in_progress' | 'done' | 'blocked';
-
-/** 태스크 인스턴스 (오픈 일정별 자동 생성) */
-export interface DepartmentTask {
-  id: string;
-  scheduleId: string;      // FranchiseSchedule.id
-  templateId: string;      // TaskTemplate.id
-  departmentId: string;
-  brandId: BrandId;
-  title: string;
-  dDayOffset: number;
-  dueDate: string;         // YYYY-MM-DD (openDate + dDayOffset)
-  status: DepartmentTaskStatus;
-  value?: string;          // text/number/date 입력값
-  note?: string;
-  completedAt?: string;
-  completedBy?: string;    // 완료 처리한 사용자 이름
-  createdAt?: string;
-  updatedAt?: string;
+  isArchived: boolean;
 }

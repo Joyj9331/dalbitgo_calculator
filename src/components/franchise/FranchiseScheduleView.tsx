@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { salesDb as db, db as mainDb, auth } from '../../firebase';
-import { collection, getDocs, doc, deleteDoc, updateDoc, addDoc, getDoc, setDoc, query, where, writeBatch } from 'firebase/firestore';
-import { FranchiseSchedule, TeamSetting, BrandId, TaskTemplate, DepartmentTask, Department } from '../../types';
-import { Plus, Search, Settings, CheckCircle2, Eye, EyeOff, X, Layers, CheckCheck, Sparkles, Bot, Send, User as UserIcon, CalendarDays, AlertTriangle, FileText, CheckSquare, ListTodo } from 'lucide-react';
+import { collection, getDocs, doc, deleteDoc, updateDoc, addDoc, getDoc, setDoc, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
+import { FranchiseSchedule, TeamSetting, BrandId, Department, User, WorkItem } from '../../types';
+import { Plus, Search, Settings, CheckCircle2, Eye, EyeOff, X, Layers, CheckCheck, Sparkles, Bot, Send, User as UserIcon, CalendarDays, AlertTriangle, FileText, CheckSquare, LayoutList } from 'lucide-react';
 import { useToast } from '../Toast';
 import { useConfirm } from '../ConfirmModal';
 import { GoogleGenAI } from '@google/genai';
@@ -14,19 +14,21 @@ import { ScheduleFormModal } from './ScheduleFormModal';
 import { TeamSettingsModal } from './TeamSettingsModal';
 import { OpenChecklistView } from './OpenChecklistView';
 import { DepartmentTaskView } from './DepartmentTaskView';
+import { StoreRegistrationModal } from './StoreRegistrationModal';
+import { addDays } from '../../utils';
 import {
-  ProcessMasterModal,
   ProcessSettings,
   DEFAULT_PROCESS_SETTINGS,
+  CALENDAR_PHASES,
+  DEFAULT_MASTER_CHECKLIST,
 } from './ProcessMasterModal';
-import { User } from '../../types';
 
 interface Props {
   brandId: BrandId;
-  currentUser?: User | null;
+  currentUser: User | null;
 }
 
-export function FranchiseScheduleView({ brandId, currentUser = null }: Props) {
+export function FranchiseScheduleView({ brandId, currentUser }: Props) {
   const toast = useToast();
   const { confirm } = useConfirm();
 
@@ -34,21 +36,31 @@ export function FranchiseScheduleView({ brandId, currentUser = null }: Props) {
   const [schedules, setSchedules] = useState<FranchiseSchedule[]>([]);
   const [teams, setTeams] = useState<TeamSetting[]>([]);
   const [loading, setLoading] = useState(true);
-  const [calendarDepts, setCalendarDepts] = useState<Department[]>([]);
-  const [calendarTasks, setCalendarTasks] = useState<DepartmentTask[]>([]);
 
   // View states
-  const [viewTab, setViewTab] = useState<'schedule' | 'checklist' | 'tasks' | 'ai'>('schedule');
+  const [viewTab, setViewTab] = useState<'calendar' | 'store'>('calendar');
   const [showArchived, setShowArchived] = useState(false);
   const [monthsView, setMonthsView] = useState<1 | 2>(1);
   const [search, setSearch] = useState('');
   const [filterTeam, setFilterTeam] = useState('');
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState('all');
+  const [dbDepartments, setDbDepartments] = useState<Department[]>([]);
+
+  // 💡 DB 부서 정보 로드
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'departments'), snap => {
+      setDbDepartments(snap.docs.map(d => ({ id: d.id, ...d.data() } as Department))
+        .filter(d => d.brandId === brandId));
+    });
+    return () => unsub();
+  }, [brandId]);
   
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showForm, setShowForm] = useState(false);
   const [editingData, setEditingData] = useState<Partial<FranchiseSchedule> | null>(null);
+  const [showStoreReg, setShowStoreReg] = useState(false);
+  const [checklistSelectedStoreId, setChecklistSelectedStoreId] = useState<string | null>(null);
   const [showTeamSettings, setShowTeamSettings] = useState(false);
-  const [showProcessMaster, setShowProcessMaster] = useState(false);
   const [processSettings, setProcessSettings] = useState<ProcessSettings>(DEFAULT_PROCESS_SETTINGS);
   
   const [hoveredTeam, setHoveredTeam] = useState<{ name: string, members: any[], x: number, y: number } | null>(null);
@@ -97,41 +109,98 @@ export function FranchiseScheduleView({ brandId, currentUser = null }: Props) {
     fetchData();
   }, [brandId]);
 
-  // 캘린더용 부서 목록 fetch
+  // 💡 [Step 1] 마스터 항목 통합 마이그레이션 및 실시간 구독
   useEffect(() => {
-    getDocs(query(collection(db, 'departments'), where('brandId', '==', brandId)))
-      .then(snap => setCalendarDepts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Department))));
-  }, [brandId]);
+    const unsub = onSnapshot(doc(db, 'process_settings', brandId), async (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data() as ProcessSettings;
+      
+      if (!data.masterItemsMigrated || !data.masterItems) {
+        console.log("🛠️ 업무 마스터 통합 마이그레이션 시작...");
+        const migratedItems: WorkItem[] = [];
+        let order = 0;
 
-  // 캘린더용 태스크 fetch (활성 매장 기준)
-  useEffect(() => {
-    const activeIds = schedules.filter(s => !s.archived).map(s => s.id);
-    if (activeIds.length === 0) { setCalendarTasks([]); return; }
-    const CHUNK = 30;
-    const fetchAll = async () => {
-      const all: DepartmentTask[] = [];
-      for (let i = 0; i < activeIds.length; i += CHUNK) {
-        const snap = await getDocs(query(collection(db, 'department_tasks'), where('scheduleId', 'in', activeIds.slice(i, i + CHUNK))));
-        all.push(...snap.docs.map(d => ({ id: d.id, ...d.data() } as DepartmentTask)));
+        // 💡 Firestore 저장을 위한 재귀적 데이터 정제 유틸 (undefined 제거)
+        const scrub = (obj: any): any => {
+          if (obj === null || obj === undefined) return undefined;
+          if (Array.isArray(obj)) {
+            const arr = obj.map(scrub).filter(v => v !== undefined);
+            return arr;
+          }
+          if (obj && typeof obj === 'object') {
+            const newObj: any = {};
+            for (const key in obj) {
+              const val = scrub(obj[key]);
+              if (val !== undefined) newObj[key] = val;
+            }
+            return newObj;
+          }
+          return obj;
+        };
+
+        // 1. 기존 체크리스트 변환
+        const oldChecklist = data.masterChecklist || DEFAULT_MASTER_CHECKLIST;
+        oldChecklist.forEach(item => {
+          const syncToFieldMap: Record<string, string> = {
+            'item_16': 'preTrainingStart',
+            'item_24': 'ownerGuideStart'
+          };
+          const newItem: WorkItem = {
+            id: item.id,
+            text: item.text,
+            category: 'checklist',
+            inputType: item.type as any,
+            departmentId: item.departmentId || '',
+            order: order++,
+            isArchived: false
+          };
+          if (syncToFieldMap[item.id]) newItem.syncToField = syncToFieldMap[item.id] as any;
+          
+          migratedItems.push(newItem);
+        });
+
+        // 2. 기존 일정 필드 변환
+        const fieldToKeyMap: Record<string, keyof FranchiseSchedule> = {
+          'constructionStart': 'constructionStart', 'constructionEnd': 'constructionEnd',
+          'oven': 'ovenIn', 'burner': 'burnerIn', 'equipment': 'equipmentIn',
+          'guide': 'ownerGuideStart', 'preTraining': 'preTrainingStart',
+          'training': 'trainingStart', 'initialStock': 'initialStockIn', 'open': 'openDate'
+        };
+
+        CALENDAR_PHASES.forEach(phase => {
+          const schField = fieldToKeyMap[phase.id];
+          const newItem: WorkItem = {
+            id: `sch_${phase.id}`,
+            text: phase.label,
+            category: 'schedule_date',
+            inputType: (phase.id === 'preTraining' || phase.id === 'training') ? 'date_range' : 'date',
+            calendarVisible: data.phaseVisibility?.[phase.id] !== false,
+            order: order++,
+            isArchived: false
+          };
+          if (schField) newItem.scheduleField = schField;
+          migratedItems.push(newItem);
+        });
+
+        await updateDoc(doc(db, 'process_settings', brandId), {
+          masterItems: scrub(migratedItems),
+          masterItemsMigrated: true
+        });
+        toast.info("업무 마스터 마이그레이션이 완료되었습니다.");
+      } else {
+        setProcessSettings(data);
       }
-      setCalendarTasks(all);
-    };
-    fetchAll();
-  }, [schedules.length, brandId]);
+    });
+    return () => unsub();
+  }, [brandId]);
 
   const fetchData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [schSnap, teamSnap, psSnap] = await Promise.all([
+      const [schSnap, teamSnap] = await Promise.all([
         getDocs(collection(db, 'franchise_schedules')),
         getDocs(collection(db, 'team_settings')),
-        getDoc(doc(db, 'process_settings', brandId)),
       ]);
-      if (psSnap.exists()) {
-        const ps = psSnap.data() as ProcessSettings;
-        setProcessSettings({ ...DEFAULT_PROCESS_SETTINGS, ...ps });
-      }
-
       const schData: FranchiseSchedule[] = [];
       schSnap.forEach(d => {
         const item = d.data() as FranchiseSchedule;
@@ -153,97 +222,54 @@ export function FranchiseScheduleView({ brandId, currentUser = null }: Props) {
     }
   };
 
-  /** openDate 기준으로 태스크 자동 생성 */
-  const generateTasksForSchedule = async (scheduleId: string, openDate: string) => {
-    const now = new Date().toISOString();
-    // 활성 템플릿 조회
-    const tmplSnap = await getDocs(
-      query(collection(db, 'task_templates'), where('brandId', '==', brandId), where('isActive', '==', true))
-    );
-    if (tmplSnap.empty) return;
-
-    // 기존 태스크 삭제
-    const existingSnap = await getDocs(
-      query(collection(db, 'department_tasks'), where('scheduleId', '==', scheduleId))
-    );
-    if (!existingSnap.empty) {
-      const delBatch = writeBatch(db);
-      existingSnap.docs.forEach(d => delBatch.delete(d.ref));
-      await delBatch.commit();
-    }
-
-    // 새 태스크 생성
-    const base = new Date(openDate);
-    const CHUNK = 400;
-    const templates = tmplSnap.docs.map(d => ({ id: d.id, ...d.data() } as TaskTemplate));
-
-    for (let i = 0; i < templates.length; i += CHUNK) {
-      const batch = writeBatch(db);
-      templates.slice(i, i + CHUNK).forEach(tmpl => {
-        const due = new Date(base);
-        due.setDate(due.getDate() + tmpl.dDayOffset);
-        const dueDate = due.toISOString().split('T')[0];
-        const ref = doc(collection(db, 'department_tasks'));
-        const task: Omit<DepartmentTask, 'id'> = {
-          scheduleId,
-          templateId: tmpl.id,
-          departmentId: tmpl.departmentId,
-          brandId,
-          title: tmpl.title,
-          dDayOffset: tmpl.dDayOffset,
-          dueDate,
-          status: 'pending',
-          createdAt: now,
-          updatedAt: now,
-        };
-        batch.set(ref, task);
-      });
-      await batch.commit();
-    }
-  };
-
   const handleSaveSchedule = async (data: Partial<FranchiseSchedule>) => {
     try {
       if (data.id) {
         const { id, ...updates } = data;
-        const prevSchedule = schedules.find(s => s.id === id);
-        const openDateChanged = prevSchedule?.openDate !== updates.openDate;
-
         await updateDoc(doc(db, 'franchise_schedules', id), {
           ...updates,
           updatedAt: new Date().toISOString()
         });
         toast.success('일정이 수정되었습니다.');
         await logActivity('일정 수정', `[${updates.storeName || '매장'}] 오픈 일정 변경`);
-
-        // 오픈일이 변경된 경우 태스크 재생성
-        if (openDateChanged && updates.openDate) {
-          const ok = await confirm({
-            title: '태스크 날짜 재계산',
-            message: `오픈일이 변경되었습니다. 부서별 태스크 마감일을 새 오픈일(${updates.openDate}) 기준으로 다시 계산할까요?`,
-            confirmLabel: '재계산',
-            variant: 'warning',
-          });
-          if (ok) {
-            await generateTasksForSchedule(id, updates.openDate);
-            toast.success('태스크 마감일이 재계산되었습니다.');
-          }
-        }
       } else {
+        // 💡 [신규] 매장 등록과 동시에 템플릿 업무를 자동 생성합니다.
         const docRef = await addDoc(collection(db, 'franchise_schedules'), {
           ...data,
           brandId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
-        toast.success('새 일정이 등록되었습니다.');
-        await logActivity('일정 등록', `[${data.storeName || '매장'}] 신규 오픈 일정 등록`);
 
-        // 오픈일이 있으면 태스크 자동 생성
         if (data.openDate) {
-          await generateTasksForSchedule(docRef.id, data.openDate);
-          toast.success('부서별 태스크가 자동 생성되었습니다.');
+           // 관리자 패널에서 설정한 템플릿 로드
+           const templateSnap = await getDocs(query(collection(db, 'task_templates'), where('brandId', '==', brandId)));
+           if (!templateSnap.empty) {
+              const batch = writeBatch(db);
+              templateSnap.forEach(tDoc => {
+                const template = tDoc.data();
+                const taskRef = doc(collection(db, 'department_tasks'));
+                // 오픈일 기준 D-Day 자동 계산
+                const dueDate = addDays(data.openDate!, template.dDayOffset || 0);
+                
+                batch.set(taskRef, {
+                  scheduleId: docRef.id,
+                  brandId,
+                  departmentId: template.departmentId,
+                  title: template.title,
+                  status: 'pending',
+                  dueDate,
+                  dDayOffset: template.dDayOffset || 0,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString()
+                });
+              });
+              await batch.commit();
+           }
         }
+
+        toast.success('새 일정이 등록되고 부서별 업무가 자동 배분되었습니다.');
+        await logActivity('일정 등록', `[${data.storeName || '매장'}] 신규 오픈 일정 등록 및 업무 자동 생성`);
       }
       setShowForm(false);
       setEditingData(null);
@@ -505,8 +531,8 @@ export function FranchiseScheduleView({ brandId, currentUser = null }: Props) {
       if (text.includes('~')) { const parts = text.split('~').map(s => s.trim()); return { start: parts[0], end: parts[1] || parts[0] }; }
       return { start: text, end: text };
     };
-    const applyDraft = (k1: keyof FranchiseSchedule, v1: string, k2: keyof FranchiseSchedule, v2: string) => {
-      if (v1 && !v1.includes('월요일') && !v1.includes('내일')) { newDraft[k1] = v1 as any; newDraft[k2] = v2 as any; }
+    const applyDraft = (k1: string, v1: string, k2: string, v2: string) => {
+      if (v1 && !v1.includes('월요일') && !v1.includes('내일')) { (newDraft as any)[k1] = v1; (newDraft as any)[k2] = v2; }
     };
     
     if (chatStep === 5) { const d = parseDates(rawInput); if (d) applyDraft('constructionStart', d.start, 'constructionEnd', d.end); }
@@ -859,7 +885,7 @@ ${transcript}`;
             <h4 className="text-sm font-bold text-rose-800 dark:text-rose-400 mb-2 tracking-tight">사전 교육비 미입금 매장이 있습니다.</h4>
             <div className="flex flex-wrap gap-2">
               {unpaidSchedules.map(s => (
-                <button key={`up-${s.id}`} onClick={() => { setViewTab('checklist'); }} className="text-xs font-bold bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 px-2.5 py-1.5 rounded-md border border-rose-100 dark:border-rose-700/50 shadow-sm hover:bg-rose-100 dark:hover:bg-slate-700 transition-colors text-left flex items-center gap-1">
+                <button key={`up-${s.id}`} onClick={() => { setViewTab('store'); }} className="text-xs font-bold bg-white dark:bg-slate-800 text-rose-700 dark:text-rose-300 px-2.5 py-1.5 rounded-md border border-rose-100 dark:border-rose-700/50 shadow-sm hover:bg-rose-100 dark:hover:bg-slate-700 transition-colors text-left flex items-center gap-1">
                   {s.storeName} [{s.storeNumber || '호수미정'}] 입금 확인 <span className="opacity-50 ml-0.5">&rarr;</span>
                 </button>
               ))}
@@ -868,57 +894,49 @@ ${transcript}`;
         </div>
        )}
 
-       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-         <div>
-           <h1 className="text-xl font-black text-stone-900 dark:text-white flex items-center gap-2 tracking-tight">
-             오픈 일정 관리
-             <span className="bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 text-[10px] px-2 py-0.5 rounded-sm font-bold tracking-widest">자동 계산</span>
-           </h1>
-           <p className="text-sm font-medium text-stone-500 mt-1.5">AI 대화 또는 수동 입력을 통해 일정을 상세 관리할 수 있습니다.</p>
-         </div>
+       {/* 헤더: 1행 - 제목 + 탭 + 버튼 */}
+       <div className="flex flex-col gap-3">
+         <div className="flex items-center gap-3 flex-wrap">
+           {/* 제목 */}
+           <div className="flex-1 min-w-0">
+             <h1 className="text-xl font-black text-stone-900 dark:text-white flex items-center gap-2 tracking-tight">
+               오픈 일정 관리
+               <span className="bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-900 text-[10px] px-2 py-0.5 rounded-sm font-bold tracking-widest">자동 계산</span>
+             </h1>
+           </div>
 
-         {/* 💡 뷰 전환 탭 */}
-         <div className="flex bg-stone-100 dark:bg-stone-800 p-1 rounded-lg border border-stone-200 dark:border-stone-700 flex-wrap gap-0.5">
-           <button
-             onClick={() => setViewTab('schedule')}
-             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${viewTab === 'schedule' ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
-           >
-             <CalendarDays size={15} /> 캘린더
-           </button>
-           <button
-             onClick={() => setViewTab('checklist')}
-             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${viewTab === 'checklist' ? 'bg-white dark:bg-stone-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
-           >
-             <CheckSquare size={15} /> 체크리스트
-           </button>
-           <button
-             onClick={() => setViewTab('tasks')}
-             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${viewTab === 'tasks' ? 'bg-white dark:bg-stone-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
-           >
-             <ListTodo size={15} /> 부서 태스크
-           </button>
-           <button
-             onClick={() => { setViewTab('ai'); if (viewTab !== 'ai') openAiChat(); }}
-             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${viewTab === 'ai' ? 'bg-white dark:bg-stone-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
-           >
-             <Bot size={15} /> AI 비서
-           </button>
-         </div>
+           {/* 뷰 전환 탭 */}
+           <div className="flex bg-stone-100 dark:bg-stone-800 p-1 rounded-lg border border-stone-200 dark:border-stone-700 shrink-0">
+             <button
+               onClick={() => setViewTab('calendar')}
+               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold whitespace-nowrap transition-all ${viewTab === 'calendar' ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-white shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+             >
+               <CalendarDays size={15} /> 캘린더
+             </button>
+             <button
+               onClick={() => setViewTab('store')}
+               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-bold whitespace-nowrap transition-all ${viewTab === 'store' ? 'bg-white dark:bg-stone-700 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+             >
+               <CheckSquare size={15} /> 매장 관리
+             </button>
+           </div>
 
-         <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar pb-2 md:pb-0 w-full md:w-auto snap-x md:flex-wrap">
-            <button onClick={() => { setEditingData({}); setShowForm(true); }} className="shrink-0 snap-start flex items-center gap-1.5 px-3 py-2 bg-stone-900 text-white text-sm font-bold rounded-sm hover:bg-stone-800 transition-colors shadow-sm">
-               <Plus size={15} /> 신규 일정 등록
-            </button>
-            <button onClick={() => setShowProcessMaster(true)} className="shrink-0 snap-start flex items-center gap-1.5 px-3 py-2 bg-white text-stone-700 border border-stone-300 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-300 text-sm font-bold rounded-sm hover:bg-stone-100 transition-colors shadow-sm">
-               <Layers size={15} /> 공정 마스터
-            </button>
-            <button onClick={() => setShowTeamSettings(true)} className="shrink-0 snap-start flex items-center gap-1.5 px-3 py-2 bg-white text-stone-700 border border-stone-300 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-300 text-sm font-bold rounded-sm hover:bg-stone-100 transition-colors shadow-sm">
-               <Settings size={15} /> 팀/권역 설정
-            </button>
+           {/* 액션 버튼 */}
+           <div className="flex items-center gap-2 shrink-0">
+             <button onClick={() => setShowStoreReg(true)} className="flex items-center gap-1.5 px-3 py-2 bg-stone-900 text-white text-sm font-bold rounded-sm hover:bg-stone-800 transition-colors shadow-sm whitespace-nowrap">
+               <Plus size={15} /> 신규 등록
+             </button>
+             <button onClick={openAiChat} className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 text-sm font-bold rounded-sm hover:bg-indigo-100 transition-colors shadow-sm whitespace-nowrap">
+               <Bot size={15} /> AI
+             </button>
+             <button onClick={() => setShowTeamSettings(true)} className="flex items-center gap-1.5 px-3 py-2 bg-white text-stone-700 border border-stone-300 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-300 text-sm font-bold rounded-sm hover:bg-stone-100 transition-colors shadow-sm whitespace-nowrap">
+               <Settings size={15} /> 팀 설정
+             </button>
+           </div>
          </div>
        </div>
 
-       {viewTab === 'schedule' ? (
+       {viewTab === 'calendar' ? (
          <>
        <div className="bg-[#FDFBF7] dark:bg-stone-900 p-4 rounded-sm border border-stone-300 dark:border-stone-800 flex flex-col md:flex-row items-center justify-between gap-4">
          <div className="flex items-center gap-2 w-full md:w-auto">
@@ -957,15 +975,14 @@ ${transcript}`;
                    currentMonth={currentMonth}
                    teams={teams}
                    phaseVisibility={processSettings.phaseVisibility}
-                   tasks={calendarTasks}
-                   departments={calendarDepts}
-                   onEditStore={(id) => { const s = schedules.find(item => item.id === id); if (s) { setEditingData(s); setShowForm(true); } }}
-                   onScheduleUpdate={async (id, data, logDetails) => {
+                   selectedDeptFilter={selectedDeptFilter}
+                   onEditStore={(id) => { setChecklistSelectedStoreId(id); setViewTab('store'); }}
+                   onScheduleUpdate={async (id, data, logDetails) => { 
                      setSchedules(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
-                     await updateDoc(doc(db, 'franchise_schedules', id), data);
+                     await updateDoc(doc(db, 'franchise_schedules', id), data); 
                      const s = schedules.find(x => x.id === id);
                      await logActivity('일정 변경', logDetails || `[${s?.storeName || '매장'}] 캘린더에서 일정 드래그 이동`);
-                     fetchData(true);
+                     fetchData(true); 
                    }}
                 />
                 {monthsView === 2 && (
@@ -974,15 +991,13 @@ ${transcript}`;
                      currentMonth={new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)}
                      teams={teams}
                      phaseVisibility={processSettings.phaseVisibility}
-                     tasks={calendarTasks}
-                     departments={calendarDepts}
-                     onEditStore={(id) => { const s = schedules.find(item => item.id === id); if (s) { setEditingData(s); setShowForm(true); } }}
-                     onScheduleUpdate={async (id, data, logDetails) => {
+                     onEditStore={(id) => { setChecklistSelectedStoreId(id); setViewTab('store'); }}
+                     onScheduleUpdate={async (id, data, logDetails) => { 
                        setSchedules(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
-                       await updateDoc(doc(db, 'franchise_schedules', id), data);
+                       await updateDoc(doc(db, 'franchise_schedules', id), data); 
                        const s = schedules.find(x => x.id === id);
                        await logActivity('일정 변경', logDetails || `[${s?.storeName || '매장'}] 캘린더에서 일정 드래그 이동`);
-                       fetchData(true);
+                       fetchData(true); 
                      }}
                   />
                 )}
@@ -1006,7 +1021,7 @@ ${transcript}`;
                         <div key={sch.id} className={`bg-[#FDFBF7] dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-sm p-6 shadow-none hover:border-stone-800 transition-all flex flex-col ${sch.archived ? 'opacity-60' : ''}`}>
                           {/* Header: Actions & Visibility */}
                           <div className="flex justify-between items-start mb-4 border-b border-stone-300 dark:border-stone-700 pb-3">
-                            <button onClick={() => { setEditingData(sch); setShowForm(true); }} className="text-left group flex-1 min-w-0">
+                            <button onClick={() => { setChecklistSelectedStoreId(sch.id); setViewTab('store'); }} className="text-left group flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <div className={`w-3 h-3 rounded-full flex-shrink-0 bg-${sch.colorCode || 'slate'}-500 shadow-sm`} />
                                 <span className="font-black text-xl tracking-tight text-stone-900 dark:text-white group-hover:text-stone-600 transition-colors truncate">{sch.storeName}</span>
@@ -1088,10 +1103,14 @@ ${transcript}`;
            </div>
         )}
         </>
-      ) : viewTab === 'checklist' ? (
+      ) : (
         <OpenChecklistView
           schedules={schedules}
+          currentUser={currentUser}
           processSettings={processSettings}
+          initialSelectedStoreId={checklistSelectedStoreId}
+          onClearInitialStore={() => setChecklistSelectedStoreId(null)}
+          onNewStore={() => setShowStoreReg(true)}
           onUpdateProgress={handleUpdateProgress}
           onUpdateSchedule={async (id, data) => {
             setSchedules(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
@@ -1104,189 +1123,47 @@ ${transcript}`;
              await updateDoc(doc(db, 'process_settings', brandId), { masterChecklist: list });
           }}
         />
-      ) : viewTab === 'tasks' ? (
-        <DepartmentTaskView
-          brandId={brandId}
-          schedules={schedules}
-          currentUser={currentUser}
-        />
-      ) : viewTab === 'ai' ? (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row h-[640px] overflow-hidden">
-          {/* 왼쪽: 채팅 영역 */}
-          <div className="flex-1 flex flex-col h-full min-w-0">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Sparkles size={18} className="text-indigo-500" />
-                AI 비서와 일정 관리하기
-              </h2>
-              <button onClick={() => openAiChat()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-xs font-bold shadow-sm">
-                대화 초기화
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-5 bg-slate-50 dark:bg-slate-950/50 scroll-smooth">
-              {chatMessages.map((msg, i) => (
-                <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-sm ${msg.role === 'bot' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
-                    {msg.role === 'bot' ? <Bot size={16} /> : <UserIcon size={16} />}
-                  </div>
-                  <div className={`px-4 py-2.5 rounded-2xl max-w-[75%] text-sm leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-sm'}`}>
-                    {msg.text.split('\n').map((line, j) => <React.Fragment key={j}>{line}<br/></React.Fragment>)}
-                  </div>
-                </div>
-              ))}
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* 다이나믹 채팅 입력창 렌더링 */}
-            {(() => {
-              if (chatStep === 99) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <button onClick={() => openAiChat()} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-sm">처음으로 돌아가기</button>
-                </div>
-              );
-              if (chatStep === 0) return (
-                <div className="flex flex-wrap gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <button onClick={() => submitChat('신규 일정 등록')} className="flex-1 py-3 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 hover:bg-indigo-100 rounded-xl font-bold transition-colors shadow-sm">신규 일정 등록</button>
-                  <button onClick={() => submitChat('기존 일정 변경')} className="flex-1 py-3 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 hover:bg-indigo-100 rounded-xl font-bold transition-colors shadow-sm">기존 일정 변경</button>
-                  <button onClick={() => submitChat('도면 검색')} className="flex-1 py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 hover:bg-emerald-100 rounded-xl font-bold transition-colors shadow-sm">도면 검색</button>
-                </div>
-              );
-              if (chatStep === 1 && updateStoreNotFound) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <select value={chatInput || ''} onChange={e => { setChatInput(e.target.value); if(e.target.value) submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
-                    <option value="">매장을 선택해 주세요</option>
-                    {schedules.map(s => (
-                      <option key={s.id} value={s.storeName}>{s.storeName} {s.archived ? '(오픈완료)' : ''}</option>
-                    ))}
-                  </select>
-                  <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-300 transition-colors shadow-sm">패스</button>
-                </div>
-              );
-              if (chatStep === 20) return (
-                <div className="flex flex-wrap gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  {['공사', '화덕', '화구', '점주안내', '사전교육', '초도물품', '본사교육', '오픈일'].map(f => (
-                    <button key={f} onClick={() => submitChat(f)} className="flex-1 min-w-[100px] py-3 bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400 hover:bg-indigo-100 rounded-xl font-bold transition-colors shadow-sm">{f} 일정</button>
-                  ))}
-                </div>
-              );
-              if (chatStep === 21) return (
-                <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">{renderMiniCalendar()}</div>
-              );
-              if (chatStep === 22) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <button onClick={() => submitChat('네')} className="flex-1 py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 hover:bg-emerald-100 rounded-xl font-bold transition-colors shadow-sm">네, 변경합니다</button>
-                  <button onClick={() => submitChat('아니오')} className="flex-1 py-3 bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-900/30 dark:border-rose-800 dark:text-rose-400 hover:bg-rose-100 rounded-xl font-bold transition-colors shadow-sm">아니오, 취소</button>
-                </div>
-              );
-              if (chatStep === 4) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <button onClick={() => { setIsAutoCalc(true); submitChat('자동 계산 (공사일만 지정)'); }} className="flex-1 flex flex-col items-center justify-center gap-1 py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 hover:bg-emerald-100 rounded-xl font-bold transition-colors shadow-sm">자동 계산 <span className="text-[10px] font-medium text-emerald-600/70 dark:text-emerald-500/70">공사일만 선택 시 완료</span></button>
-                  <button onClick={() => { setIsAutoCalc(false); submitChat('수동 상세 입력 (모든 일정)'); }} className="flex-1 flex flex-col items-center justify-center gap-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400 hover:bg-blue-100 rounded-xl font-bold transition-colors shadow-sm">수동 상세 입력 <span className="text-[10px] font-medium text-blue-600/70 dark:text-blue-500/70">모든 일정을 직접 선택</span></button>
-                </div>
-              );
-              if (chatStep === 2) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <select value={chatInput || `${nextStoreNumber}호`} onChange={e => { setChatInput(e.target.value); submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
-                    {Array.from({length: 15}).map((_, i) => { const val = nextStoreNumber - 5 + i; if (val > 0) return <option key={val} value={`${val}호`}>{val}호</option>; return null; })}
-                  </select>
-                  <button onClick={() => submitChat(chatInput || `${nextStoreNumber}호`)} className="w-20 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-sm">선택</button>
-                </div>
-              );
-              if (chatStep === 3) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <select value={chatInput || '선택 안함'} onChange={e => { setChatInput(e.target.value); submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
-                    <option value="선택 안함">선택 안함</option>
-                    {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                  </select>
-                  <button onClick={() => submitChat(chatInput || '선택 안함')} className="w-20 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-sm">선택</button>
-                </div>
-              );
-              if (chatStep === 6) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <button onClick={() => submitChat('네')} className="flex-1 py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 hover:bg-emerald-100 rounded-xl font-bold transition-colors shadow-sm">네, 준비되었습니다</button>
-                  <button onClick={() => submitChat('아니오')} className="flex-1 py-3 bg-slate-100 text-slate-700 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 hover:bg-slate-200 rounded-xl font-bold transition-colors shadow-sm">아니오, 나중에 할게요</button>
-                </div>
-              );
-              if (chatStep === 7) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <select value={chatInput || ''} onChange={e => { setChatInput(e.target.value); if(e.target.value) submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
-                    <option value="">공사업체 선택 (또는 패스)</option>
-                    <option value="더원">더원</option>
-                    <option value="감리">감리</option>
-                    <option value="직접입력">직접입력</option>
-                  </select>
-                  <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-300 transition-colors shadow-sm">패스</button>
-                </div>
-              );
-              if (chatStep === 8) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <select value={chatInput || ''} onChange={e => { setChatInput(e.target.value); if(e.target.value) submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
-                    <option value="">간판업체 선택 (또는 패스)</option>
-                    <option value="동영">동영</option>
-                    <option value="직접">직접</option>
-                  </select>
-                  <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-300 transition-colors shadow-sm">패스</button>
-                </div>
-              );
-              if (chatStep === 10) return (
-                <div className="flex gap-2 w-full p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <select value={chatInput || ''} onChange={e => { setChatInput(e.target.value); if(e.target.value) submitChat(e.target.value); }} className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer">
-                    <option value="">가스 종류 선택 (또는 패스)</option>
-                    <option value="LNG">LNG</option>
-                    <option value="LPG">LPG</option>
-                    <option value="미등록">미등록</option>
-                    <option value="직접입력">직접입력</option>
-                  </select>
-                  <button onClick={() => submitChat(chatInput || '엔터 (패스)')} className="w-20 py-3 bg-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-300 transition-colors shadow-sm">패스</button>
-                </div>
-              );
-              if ([5, 9, 11, 12, 13, 15, 16, 17].includes(chatStep) && !pendingAiData && !isAiProcessing) return (
-                <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">{renderMiniCalendar()}</div>
-              );
-              return (
-                <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
-                  <form onSubmit={handleSendChatForm} className="flex gap-2 relative">
-                    <input
-                      type="text" autoFocus value={chatInput} onChange={e => setChatInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); if (pendingAiData) { setPendingAiData(null); setChatMessages(prev => [...prev, { role: 'bot', text: '⚠️ 확정이 취소되었습니다. 추가로 수정할 내용을 입력하시거나 창을 닫아주세요.' }]); } } }}
-                      placeholder={isAiProcessing ? "AI가 분석 중입니다..." : pendingAiData ? "엔터(확인) 또는 ESC(취소)를 눌러주세요" : "답변을 입력해주세요..."}
-                      disabled={isAiProcessing} className="flex-1 pl-4 pr-12 py-3 bg-slate-100 dark:bg-slate-800 border border-transparent focus:border-indigo-300 dark:focus:border-indigo-700 rounded-xl outline-none text-sm text-slate-900 dark:text-white transition-colors"
-                    />
-                    <button type="submit" disabled={isAiProcessing} className="absolute right-1.5 top-1.5 bottom-1.5 w-10 flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-50 transition-colors shadow-sm">
-                      <Send size={16} className={isAiProcessing ? "animate-bounce" : ""} />
-                    </button>
-                  </form>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* 오른쪽: 라이브 프리뷰 */}
-          {renderLivePreview()}
-        </div>
-      ) : null}
+      )}
 
         {showForm && (
-          <ScheduleFormModal initial={editingData || {}} teams={teams} schedules={schedules} processSettings={processSettings} onSave={handleSaveSchedule} onClose={() => { setShowForm(false); setEditingData(null); }} />
+          <ScheduleFormModal
+            initial={editingData || {}}
+            teams={teams}
+            schedules={schedules}
+            processSettings={processSettings}
+            onSave={handleSaveSchedule}
+            onUpdateSchedule={async (scheduleId, data) => {
+              const { id: _id, ...updates } = { id: scheduleId, ...data };
+              await updateDoc(doc(db, 'franchise_schedules', scheduleId), { ...updates, updatedAt: new Date().toISOString() });
+              setSchedules(prev => prev.map(s => s.id === scheduleId ? { ...s, ...updates } : s));
+            }}
+            onClose={() => { setShowForm(false); setEditingData(null); }}
+          />
         )}
 
         {showTeamSettings && (
           <TeamSettingsModal brandId={brandId} onClose={() => setShowTeamSettings(false)} />
         )}
 
-        {showProcessMaster && (
-          <ProcessMasterModal
+        {showStoreReg && (
+          <StoreRegistrationModal
             brandId={brandId}
-            onClose={() => setShowProcessMaster(false)}
-            onSaved={(settings) => setProcessSettings(settings)}
+            teams={teams}
+            onClose={() => setShowStoreReg(false)}
+            onCreated={(id) => {
+              setShowStoreReg(false);
+              fetchData(true);
+              setChecklistSelectedStoreId(id);
+              setViewTab('store');
+            }}
           />
         )}
 
-        {/* AI 모달은 탭으로 이전됨 */}
-        {false && (
-          <div className="hidden">
-            <div>
+        {/* ✨ 신규: AI 대화형 일정 등록 모달 */}
+        {showAiModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-4xl border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row h-[600px] overflow-hidden">
+              {/* 왼쪽: 채팅 영역 */}
               <div className="flex-1 flex flex-col h-full min-w-0">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
                   <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">

@@ -56,8 +56,16 @@ function TaskRow({
   const [noteVal, setNoteVal] = useState(task.note || '');
   const cfg = STATUS_CONFIG[task.status];
   const overdue = isOverdue(task);
+  const toast = useToast();
+
+  // 💡 수정 권한 체크: 사용자가 담당 부서에 속해있거나 관리자인지 확인
+  const canEdit = currentUser?.role === 'admin' || (currentUser?.departmentIds || []).includes(task.departmentId);
 
   const cycleStatus = () => {
+    if (!canEdit) {
+      toast.error(`이 업무를 수정할 권한이 없습니다. (담당 부서: ${task.departmentId})`);
+      return;
+    }
     const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(task.status) + 1) % STATUS_CYCLE.length];
     onStatusChange(task.id, next, next === 'done' ? (currentUser?.name || '알 수 없음') : undefined);
   };

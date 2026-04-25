@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FranchiseSchedule, TeamSetting, FileAttachment } from '../../types';
-import { X, Calculator, AlertCircle, Palette, Eye, EyeOff, FileText, UploadCloud, Loader2 } from 'lucide-react';
+import { FranchiseSchedule, TeamSetting, FileAttachment, Department } from '../../types';
+import { X, Calculator, AlertCircle, Palette, Eye, EyeOff, FileText, UploadCloud, Loader2, ClipboardList } from 'lucide-react';
 import { useToast } from '../Toast';
 import { addDays, diffDays, addExcludingSunday, getOvenInDate, getPreTrainingStartDate } from '../../utils';
-import { ProcessSettings } from './ProcessMasterModal';
+import { ProcessSettings, DEFAULT_MASTER_CHECKLIST, ChecklistMasterItem } from './ProcessMasterModal';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { storage } from '../../firebase';
+import { storage, salesDb } from '../../firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
+
+const CHECKLIST_STATUS_LABELS = ['미진행', '안내완료', '진행중', '완료'];
+const CHECKLIST_STATUS_CLASSES = [
+  'bg-rose-100 text-rose-700 border-rose-200',
+  'bg-amber-100 text-amber-700 border-amber-200',
+  'bg-blue-100 text-blue-700 border-blue-200',
+  'bg-emerald-100 text-emerald-700 border-emerald-200',
+];
 
 interface Props {
   initial: Partial<FranchiseSchedule>;
@@ -13,6 +22,7 @@ interface Props {
   schedules: FranchiseSchedule[];
   processSettings?: ProcessSettings;
   onSave: (data: Partial<FranchiseSchedule>) => Promise<void>;
+  onUpdateSchedule?: (scheduleId: string, data: Partial<FranchiseSchedule>) => Promise<void>;
   onClose: () => void;
 }
 
@@ -45,7 +55,7 @@ export const CALENDAR_COLORS = [
   { id: 'neutral', bg: 'bg-neutral-500', hover: 'hover:bg-neutral-600' },
 ];
 
-export function ScheduleFormModal({ initial, teams, schedules, processSettings, onSave, onClose }: Props) {
+export function ScheduleFormModal({ initial, teams, schedules, processSettings, onSave, onUpdateSchedule, onClose }: Props) {
   const [form, setForm] = useState<Partial<FranchiseSchedule>>({
     showInCalendar: true,
     progressCheck: {
@@ -62,6 +72,18 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
   const [isGasCustom, setIsGasCustom] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('all');
+  const [dbDepartments, setDbDepartments] = useState<Department[]>([]);
+
+  // 💡 DB 부서 정보 실시간 로드
+  useEffect(() => {
+    const unsub = onSnapshot(collection(salesDb, 'departments'), snap => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Department))
+        .filter(d => d.brandId === (form.brandId || 'dalbitgo'));
+      setDbDepartments(data);
+    });
+    return () => unsub();
+  }, [form.brandId]);
   
   // 💡 신규: 일정 자동 계산 토글 (AI가 자동계산을 요청했거나 기존 일정이 없으면 ON)
   const [autoCalc, setAutoCalc] = useState((initial as any).isAiAutoCalc ?? (!initial.id && !initial.openDate));
@@ -218,15 +240,25 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
         uploaded.push({ url, name: file.name });
       }
       const newPdfs = [...getPdfs(), ...uploaded];
-      setForm(prev => ({
-        ...prev,
+      
+      const checklistData = (form as any).checklistData || {};
+      const drawingItem = { 
+        ...(checklistData['item_18'] || {}), 
+        files: newPdfs, 
+        status: 3 // 완료
+      };
+
+      const updates = {
         finalDrawingPdfs: newPdfs,
-        finalDrawingPdfUrl: newPdfs[0]?.url,
-        progressCheck: {
-          ...(prev.progressCheck || { drawingUpload: false, ovenOrder: false, ownerGuide: false, equipmentOrder: false, internetOrder: false, initialEntry: false }),
-          drawingUpload: true
-        }
-      }));
+        finalDrawingPdfUrl: newPdfs[0]?.url || '',
+        progressCheck: { ...(form.progressCheck as any), drawingUpload: true },
+        checklistData: { ...checklistData, item_18: drawingItem }
+      };
+
+      setForm(prev => ({ ...prev, ...updates }));
+      if (form.id && onUpdateSchedule) {
+        await onUpdateSchedule(form.id, updates);
+      }
       toast.success(`도면 ${uploaded.length}개가 업로드되었습니다.`);
     } catch (err) {
       toast.error('도면 업로드에 실패했습니다.');
@@ -241,7 +273,8 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 md:p-4">
       <div className="bg-white dark:bg-slate-900 rounded-none md:rounded-2xl shadow-xl w-full max-w-5xl border-0 md:border border-slate-200 dark:border-slate-800 flex flex-col h-full md:h-auto md:max-h-[95vh]">
-        <div className="flex flex-wrap items-center justify-between px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0 gap-2">
+        <div className="flex flex-col px-4 md:px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0 gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2 md:gap-4 w-full md:w-auto">
              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex-1 md:flex-none">가맹점 일정 상세 정보</h2>
              <button onClick={onClose} className="md:hidden p-1.5 rounded-md text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -271,10 +304,34 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
           <button onClick={onClose} className="hidden md:block p-1.5 rounded-md text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
             <X size={18} />
           </button>
+          </div>
+
+          {/* 💡 부서 탭: 클릭하기 편하게 더 크게 개선 */}
+          <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
+            <button
+              type="button"
+              onClick={() => setSelectedDeptId('all')}
+              className={`shrink-0 px-5 py-2.5 rounded-xl text-sm font-black tracking-tight transition-all border shadow-sm ${selectedDeptId === 'all' ? 'bg-slate-800 text-white border-transparent shadow-md scale-105' : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'}`}
+            >
+              전체 항목
+            </button>
+            {dbDepartments.map(dept => (
+              <button
+                key={dept.id}
+                type="button"
+                onClick={() => setSelectedDeptId(dept.id)}
+                className={`shrink-0 px-5 py-2.5 rounded-xl text-sm font-black tracking-tight transition-all border shadow-sm ${selectedDeptId === dept.id ? `${dept.color} text-white border-transparent shadow-md scale-105` : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-50'}`}
+              >
+                {dept.name}
+              </button>
+            ))}
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-4 md:p-6 space-y-6 md:space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {/* 매장 기본 정보는 항상 노출 */}
+          {(true) && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-2">
             <div className="md:col-span-1">
               <label className={labelCls}>매장 호수 *</label>
               <div className="relative">
@@ -308,8 +365,10 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
                </div>
             </div>
           </div>
+          )}
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {(true) && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-2">
             <div>
               <label className={labelCls}>공사 구분 / 가스</label>
               <div className="flex gap-2">
@@ -374,63 +433,94 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
               </div>
             </div>
           </div>
+          )}
 
           <hr className="border-slate-100 dark:border-slate-800" />
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-            <div className="space-y-4">
-              <h3 className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-200 text-sm">
-                <span className="w-6 h-6 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-600 flex items-center justify-center text-xs">01</span>
-                공사 및 집기 입고
-              </h3>
-              <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
-                <div><label className={labelCls}>공사 시작일</label><input type="date" className={inputCls} value={form.constructionStart || ''} onChange={e => set('constructionStart', e.target.value)} /></div>
-                <div><label className={labelCls}>공사 종료일</label><input type="date" className={inputCls} value={form.constructionEnd || ''} onChange={e => set('constructionEnd', e.target.value)} /></div>
-                <div><label className={labelCls}>화덕 입고일</label><input type="date" className={inputCls} value={form.ovenIn || ''} onChange={e => set('ovenIn', e.target.value)} /></div>
-                <div><label className={labelCls}>화구류 입고일</label><input type="date" className={inputCls} value={form.equipmentIn || ''} onChange={e => set('equipmentIn', e.target.value)} /></div>
-              </div>
-            </div>
+          {/* 💡 [Step 3] 마스터 설정 기반 동적 일정 렌더링 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {(() => {
+              // 1. 마스터 아이템 중 활성화된 일정 날짜 항목만 추출
+              const masterDates = (processSettings?.masterItems || [])
+                .filter(item => item.category === 'schedule_date' && !item.isArchived)
+                .sort((a, b) => a.order - b.order);
+              
+              // 2. 부서별 그룹핑
+              const groupedByDept: Record<string, typeof masterDates> = {};
+              masterDates.forEach(item => {
+                const dept = item.departmentId || 'unassigned';
+                if (!groupedByDept[dept]) groupedByDept[dept] = [];
+                groupedByDept[dept].push(item);
+              });
 
-            <div className="space-y-4">
-              <h3 className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-200 text-sm">
-                <span className="w-6 h-6 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center text-xs">02</span>
-                교육 프로세스
-              </h3>
-              <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
-                <div className="flex gap-2">
-                   <div className="flex-1"><label className={labelCls}>사전교육 시작</label><input type="date" className={inputCls} value={form.preTrainingStart || ''} onChange={e => set('preTrainingStart', e.target.value)} /></div>
-                   <div className="flex-1"><label className={labelCls}>일수</label><input type="number" className={inputCls} value={form.preTrainingDays || 0} readOnly /></div>
-                </div>
-                <div>
-                   <label className={labelCls}>사전교육 장소</label>
-                   <select className={inputCls} value={form.preTrainingLocation || ''} onChange={e => set('preTrainingLocation', e.target.value)}>
-                     <option value="">장소 선택</option>
-                     {PRE_TRAINING_LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                   </select>
-                </div>
-                <div><label className={labelCls}>참여 인원</label>
-                  <select className={inputCls} value={form.preTrainingParticipants || 1} onChange={e => set('preTrainingParticipants', parseInt(e.target.value))}>
-                    {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}명</option>)}
-                  </select>
-                </div>
-                <div><label className={labelCls}>본사 교육 시작일</label><input type="date" className={inputCls} value={form.trainingStart || ''} onChange={e => set('trainingStart', e.target.value)} /></div>
-              </div>
-            </div>
+              // 3. 현재 탭(selectedDeptId)에 따라 렌더링할 부서 결정
+              const targetDepts = selectedDeptId === 'all' 
+                ? Object.keys(groupedByDept) 
+                : [selectedDeptId].filter(id => groupedByDept[id]);
 
-            <div className="space-y-4">
-              <h3 className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-200 text-sm">
-                <span className="w-6 h-6 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-xs">03</span>
-                행정 및 그랜드 오픈
-              </h3>
-              <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
-                <div><label className={labelCls}>점주 안내 시작일</label><input type="date" className={inputCls} value={form.ownerGuideStart || ''} onChange={e => set('ownerGuideStart', e.target.value)} /></div>
-                <div><label className={labelCls}>초도물품 입고일</label><input type="date" className={inputCls} value={form.initialStockIn || ''} onChange={e => set('initialStockIn', e.target.value)} /></div>
-                <div><label className={labelCls}>그랜드 오픈일</label><input type="date" className={`${inputCls} border-rose-200 dark:border-rose-900 font-bold text-rose-600`} value={form.openDate || ''} onChange={e => set('openDate', e.target.value)} /></div>
-              </div>
-            </div>
+              return targetDepts.map((deptId, idx) => {
+                const items = groupedByDept[deptId];
+                const deptInfo = dbDepartments.find(d => d.id === deptId);
+                
+                return (
+                  <div key={deptId} className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                    <h3 className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-200 text-sm">
+                      <span className="w-6 h-6 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center text-xs">{(idx+1).toString().padStart(2, '0')}</span>
+                      {deptInfo?.name || (deptId === 'unassigned' ? '기타 일정' : deptId)}
+                      {deptInfo?.color && (
+                         <span className={`text-[10px] ${deptInfo.color} text-white px-1.5 py-0.5 rounded font-bold ml-auto uppercase`}>
+                           {deptInfo.name}
+                         </span>
+                      )}
+                    </h3>
+                    <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
+                      {items.map(item => {
+                        const field = item.scheduleField;
+                        if (!field) return null;
+
+                        return (
+                          <div key={item.id} className="space-y-1">
+                            <label className={labelCls}>{item.text}</label>
+                            {item.inputType === 'date' && (
+                              <input type="date" className={inputCls} value={(form as any)[field] || ''} onChange={e => set(field, e.target.value)} />
+                            )}
+                            {item.inputType === 'date_range' && (
+                              <div className="flex gap-2">
+                                <input type="date" className={inputCls} value={(form as any)[field] || ''} onChange={e => set(field, e.target.value)} />
+                                <span className="flex items-center text-slate-400">~</span>
+                                {(() => {
+                                  // Start 필드에 대응하는 End 필드 자동 추측 (예: constructionStart -> constructionEnd)
+                                  const endField = field.replace('Start', 'End').replace('In', 'End') as keyof FranchiseSchedule;
+                                  return (
+                                    <input type="date" className={inputCls} value={(form as any)[endField] || ''} onChange={e => set(endField, e.target.value)} />
+                                  );
+                                })()}
+                              </div>
+                            )}
+                            {item.inputType === 'location_select' && (
+                              <select className={inputCls} value={form.preTrainingLocation || ''} onChange={e => set('preTrainingLocation', e.target.value)}>
+                                <option value="">장소 선택</option>
+                                {PRE_TRAINING_LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                              </select>
+                            )}
+                            {item.inputType === 'participant_count' && (
+                              <select className={inputCls} value={form.preTrainingParticipants || 1} onChange={e => set('preTrainingParticipants', parseInt(e.target.value))}>
+                                {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}명</option>)}
+                              </select>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
 
-          <hr className="border-slate-100 dark:border-slate-800" />
+          {(true) && (
+            <>
+              <hr className="border-slate-100 dark:border-slate-800" />
           <div className="space-y-2">
             <label className={labelCls}>최종 도면 (PDF)</label>
             <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-100 dark:border-slate-800">
@@ -454,6 +544,82 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
               )}
             </div>
           </div>
+            </>
+          )}
+
+          {/* 체크리스트 섹션 (기존 매장 편집 시에만 표시) */}
+          {form.id && onUpdateSchedule && (() => {
+            // 💡 [Step 4] masterItems에서 checklist 카테고리만 추출
+            const checklistItems = (processSettings?.masterItems || [])
+              .filter(item => item.category === 'checklist' && !item.isArchived)
+              .sort((a, b) => a.order - b.order);
+
+            const checklistData: Record<string, any> = (form as any).checklistData || {};
+            const filteredItems = selectedDeptId === 'all'
+              ? checklistItems
+              : checklistItems.filter(item => {
+                  const ids = item.departmentIds?.length ? item.departmentIds : (item.departmentId ? [item.departmentId] : []);
+                  return ids.includes(selectedDeptId);
+                });
+            
+            if (filteredItems.length === 0) return null;
+            const completedCount = filteredItems.filter(item => (checklistData[item.id]?.status || 0) === 3).length;
+            return (
+              <>
+                <hr className="border-slate-100 dark:border-slate-800" />
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <ClipboardList size={16} className="text-blue-500" />
+                    <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm">오픈 체크리스트</h3>
+                    <span className="text-[10px] text-slate-500 ml-auto font-medium">
+                      {completedCount}/{filteredItems.length} 완료
+                    </span>
+                    {selectedDeptId !== 'all' && (
+                      <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">
+                        {dbDepartments.find(d => d.id === selectedDeptId)?.name || '해당 부서'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                    {filteredItems.map(item => {
+                      const status = checklistData[item.id]?.status || 0;
+                      const dept = dbDepartments.find(d => d.id === item.departmentId);
+                      return (
+                        <div key={item.id} className="flex items-center gap-3 px-3 py-2.5 bg-white dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-slate-800 dark:text-slate-200 truncate font-medium">{item.text}</p>
+                            {item.inputType === 'file' && checklistData[item.id]?.files?.length > 0 && (
+                              <p className="text-[10px] text-blue-500 font-bold mt-0.5">📎 파일 {checklistData[item.id].files.length}개 첨부됨</p>
+                            )}
+                          </div>
+                          {selectedDeptId === 'all' && dept && (
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold text-white ${dept.color} opacity-70 shrink-0`}>
+                              {dept.name}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextStatus = (status + 1) % 4;
+                              const newChecklistData = {
+                                ...checklistData,
+                                [item.id]: { ...(checklistData[item.id] || {}), status: nextStatus }
+                              };
+                              setForm(prev => ({ ...prev, checklistData: newChecklistData } as any));
+                              onUpdateSchedule(form.id!, { checklistData: newChecklistData });
+                            }}
+                            className={`shrink-0 px-2.5 py-1 rounded-full border text-[10px] font-bold transition-all ${CHECKLIST_STATUS_CLASSES[status]}`}
+                          >
+                            {CHECKLIST_STATUS_LABELS[status]}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            );
+          })()}
 
           <div className="space-y-2">
             <label className={labelCls}>특이사항 메모</label>

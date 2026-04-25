@@ -1,14 +1,7 @@
 import React, { useState } from 'react';
-import { FranchiseSchedule, TeamSetting, Department, DepartmentTask, DepartmentTaskStatus } from '../../types';
+import { FranchiseSchedule, TeamSetting } from '../../types';
 import { isDateInRange, addDays } from '../../utils';
-import { Calendar as CalendarIcon, List, CheckCircle2, Clock, AlertCircle, Ban, ListTodo } from 'lucide-react';
-
-const TASK_STATUS_ICON: Record<DepartmentTaskStatus, React.ReactNode> = {
-  pending:     <Clock size={9} className="text-stone-400" />,
-  in_progress: <AlertCircle size={9} className="text-blue-400" />,
-  done:        <CheckCircle2 size={9} className="text-green-500" />,
-  blocked:     <Ban size={9} className="text-red-400" />,
-};
+import { Calendar as CalendarIcon, List } from 'lucide-react';
 
 // 💡 [Tailwind 완벽 해결] Tailwind 스캐너가 인식할 수 있도록 완성된 클래스명을 직접 매핑
 const BG_CLASSES: Record<string, string> = {
@@ -26,16 +19,14 @@ interface Props {
   onScheduleUpdate: (id: string, updates: Partial<FranchiseSchedule>, logDetails?: string) => Promise<void>;
   onEditStore?: (id: string) => void;
   phaseVisibility?: Record<string, boolean>; // 공정 마스터 캘린더 표기 설정
-  tasks?: DepartmentTask[];
-  departments?: Department[];
+  selectedDeptFilter?: string;
 }
 
-export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpdate, onEditStore, phaseVisibility = {}, tasks = [], departments = [] }: Props) {
+export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpdate, onEditStore, phaseVisibility = {}, selectedDeptFilter = 'all' }: Props) {
   // 💡 모바일(화면 너비 768px 미만)일 경우 기본값을 '리스트 뷰'로 설정
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>(
     typeof window !== 'undefined' && window.innerWidth < 768 ? 'list' : 'calendar'
   );
-  const [showTasks, setShowTasks] = useState(true);
   const isPhaseVisible = (id: string) => phaseVisibility[id] !== false; // 기본: 표시
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
@@ -87,8 +78,11 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
       const colorCode = s.colorCode || 'slate';
       const bgClass = BG_CLASSES[colorCode] || 'bg-slate-500';
 
-      const addEv = (id: string, name: string, start: string, end: string, isCustom: boolean = false) => {
+      const addEv = (id: string, name: string, start: string, end: string, dept: string, isCustom: boolean = false) => {
         if (!start) return;
+        // 💡 부서 필터링
+        if (selectedDeptFilter !== 'all' && dept !== selectedDeptFilter) return;
+
         const effectiveEnd = end || start; // end 미입력 시 start와 동일한 1일짜리 이벤트
         if (!isDateInRange(dateStr, start, effectiveEnd)) return;
         // eslint-disable-next-line no-param-reassign
@@ -113,25 +107,25 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
         });
       };
 
-      if (isPhaseVisible('constructionStart') && s.constructionStart === dateStr) addEv('constructionStart', '시작', s.constructionStart, s.constructionStart);
-      if (isPhaseVisible('constructionEnd') && s.constructionEnd === dateStr) addEv('constructionEnd', '종료', s.constructionEnd, s.constructionEnd);
+      if (isPhaseVisible('constructionStart') && s.constructionStart === dateStr) addEv('constructionStart', '시작', s.constructionStart, s.constructionStart, 'facility');
+      if (isPhaseVisible('constructionEnd') && s.constructionEnd === dateStr) addEv('constructionEnd', '종료', s.constructionEnd, s.constructionEnd, 'facility');
 
-      if (isPhaseVisible('oven')) addEv('oven', '화덕', s.ovenIn, s.ovenEnd);
-      if (isPhaseVisible('burner') && s.burnerIn === dateStr) addEv('burner', '화구', s.burnerIn, s.burnerIn);
-      if (isPhaseVisible('equipment') && s.equipmentIn === dateStr) addEv('equipment', '화구입고', s.equipmentIn, s.equipmentIn);
-      if (isPhaseVisible('guide') && s.ownerGuideStart === dateStr) addEv('guide', '안내', s.ownerGuideStart, s.ownerGuideStart);
+      if (isPhaseVisible('oven')) addEv('oven', '화덕', s.ovenIn, s.ovenEnd, 'facility');
+      if (isPhaseVisible('burner') && s.burnerIn === dateStr) addEv('burner', '화구', s.burnerIn, s.burnerIn, 'facility');
+      if (isPhaseVisible('equipment') && s.equipmentIn === dateStr) addEv('equipment', '화구입고', s.equipmentIn, s.equipmentIn, 'facility');
+      if (isPhaseVisible('guide') && s.ownerGuideStart === dateStr) addEv('guide', '안내', s.ownerGuideStart, s.ownerGuideStart, 'sv');
 
-      if (isPhaseVisible('preTraining')) addEv('preTraining', '사전', s.preTrainingStart, s.preTrainingEnd);
-      if (isPhaseVisible('training')) addEv('training', '교육', s.trainingStart, s.trainingEnd);
-      if (isPhaseVisible('initialStock')) addEv('initialStock', '초도', s.initialStockIn, s.initialStockEnd);
+      if (isPhaseVisible('preTraining')) addEv('preTraining', '사전', s.preTrainingStart, s.preTrainingEnd, 'education');
+      if (isPhaseVisible('training')) addEv('training', '교육', s.trainingStart, s.trainingEnd, 'education');
+      if (isPhaseVisible('initialStock')) addEv('initialStock', '초도', s.initialStockIn, s.initialStockEnd, 'sv');
 
       if (isPhaseVisible('open') && s.openDate === dateStr) {
-        addEv('open', '오픈', s.openDate, s.openDate);
+        addEv('open', '오픈', s.openDate, s.openDate, 'sv');
       }
 
       if (s.customPhases) {
         s.customPhases.forEach(cp => {
-          addEv(cp.id, cp.name, cp.startDate, cp.endDate || cp.startDate, true);
+          addEv(cp.id, cp.name, cp.startDate, cp.endDate || cp.startDate, 'custom');
         });
       }
     });
@@ -205,27 +199,12 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
   }
 
   const todayStr = new Date().toISOString().split('T')[0];
-
-  const getTasksForDate = (dateStr: string): DepartmentTask[] => {
-    if (!tasks.length) return [];
-    return tasks.filter(t => t.dueDate === dateStr);
-  };
-
-  const agendaDays = cells.filter(cell => cell.isCurrentMonth && (getEventsForDate(cell.fullDate).length > 0 || (showTasks && getTasksForDate(cell.fullDate).length > 0)));
+  const agendaDays = cells.filter(cell => cell.isCurrentMonth && getEventsForDate(cell.fullDate).length > 0);
 
   return (
     <div className="relative flex flex-col h-full">
       {/* 뷰 모드 토글 */}
-      <div className="flex items-center justify-between mb-2">
-        {tasks.length > 0 ? (
-          <button
-            onClick={() => setShowTasks(v => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors border ${showTasks ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400' : 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}
-          >
-            <ListTodo size={12} />
-            태스크 {showTasks ? '표시중' : '숨김'}
-          </button>
-        ) : <div />}
+      <div className="flex justify-end mb-2">
         <div className="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-lg">
           <button onClick={() => setViewMode('calendar')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'calendar' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`} title="달력 보기">
             <CalendarIcon size={14} />
@@ -273,20 +252,6 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
                           </div>
                         </div>
                       ))}
-                      {/* 태스크 목록 (리스트뷰) */}
-                      {showTasks && getTasksForDate(cell.fullDate).map(task => {
-                        const dept = departments.find(d => d.id === task.departmentId);
-                        const sch = schedules.find(s => s.id === task.scheduleId);
-                        const isOverdue = task.status !== 'done' && task.dueDate < todayStr;
-                        return (
-                          <div key={task.id} className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-medium ${isOverdue ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800 text-red-700 dark:text-red-300' : task.status === 'done' ? 'bg-slate-50 border-slate-200 dark:bg-slate-800/30 dark:border-slate-700 text-slate-400 line-through' : 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}>
-                            <div className={`w-2 h-2 rounded-full shrink-0 ${dept?.color || 'bg-slate-400'}`} />
-                            <span className="font-bold text-slate-500 dark:text-slate-400 shrink-0">{sch?.storeName}</span>
-                            <span className="truncate">{task.title}</span>
-                            <span className="ml-auto shrink-0">{TASK_STATUS_ICON[task.status]}</span>
-                          </div>
-                        );
-                      })}
                     </div>
                   </div>
                 )
@@ -339,9 +304,9 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
                             {uniqueTracks.map((trackKey, tIdx) => {
                               const ev = evMap[trackKey];
                               if (!ev) {
-                                  return <div key={`spacer-${trackKey}-${tIdx}`} className="h-[28px]" />;
+                                  return <div key={`spacer-${trackKey}-${tIdx}`} className="h-[34px]" />;
                               }
-
+                              
                               const isLongBlock = ev.duration >= 3;
                               const showStartText = ev.isActuallyStart || cIdx === 0;
                               const showEndText = isLongBlock && ev.isActuallyEnd;
@@ -352,24 +317,25 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
                               const rightBorder = ev.isActuallyEnd ? "border-r border-black/10" : "";
 
                               return (
-                                <div
-                                  key={tIdx}
+                                <div 
+                                  key={tIdx} 
                                   onClick={(e) => openEditPopup(e, ev)}
-                                  className={`relative text-[12px] h-[28px] flex items-center shadow-none cursor-pointer hover:brightness-95 ${ev.bgClass} ${roundedCls} ${borderCls} ${leftBorder} ${rightBorder} transition-all leading-tight`}
+                                  className={`relative text-[13px] h-[34px] flex items-center shadow-sm cursor-pointer hover:brightness-90 ${ev.bgClass} ${roundedCls} ${borderCls} ${leftBorder} ${rightBorder} transition-all leading-tight border-white/20`} 
                                   title={`[${ev.team}][${ev.storeName}][${ev.phaseName}]`}
                                   draggable
                               onDragStart={(e) => handleDragStart(e, ev.scheduleId, ev.phaseId, ev.phaseName, cell.fullDate, ev.isCustom)}
                                 >
                                     {showStartText && (
                                       <div className={`absolute top-0 bottom-0 flex items-center whitespace-nowrap z-20 pointer-events-none overflow-visible ${cIdx === 6 ? 'right-0 pr-1 sm:pr-2' : 'left-0 pl-1 sm:pl-2'}`}>
-                                        <span className="text-slate-900 dark:text-white font-bold dark:drop-shadow-md text-[10px] sm:text-[11px] tracking-tight">
-                                          [{ev.team}][{ev.storeName}][{ev.phaseName}]
+                                        <span className="text-white font-black drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] text-[11px] sm:text-[12px] tracking-tighter">
+                                          <span className="opacity-80 font-bold mr-1 text-[10px]">[{ev.team}]</span>
+                                          {ev.storeName} <span className="ml-1 text-[10px] opacity-90">{ev.phaseName}</span>
                                         </span>
                                       </div>
                                     )}
                                     {showEndText && !showStartText && (
                                       <div className="absolute right-0 top-0 bottom-0 flex items-center pr-1 sm:pr-2 whitespace-nowrap z-20 pointer-events-none overflow-visible">
-                                        <span className="text-slate-900 dark:text-white font-bold dark:drop-shadow-md text-[10px] sm:text-[11px] tracking-tight">
+                                        <span className="text-white font-black drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] text-[11px] sm:text-[12px] tracking-tighter opacity-80">
                                           [{ev.phaseName}]
                                         </span>
                                       </div>
@@ -377,37 +343,6 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, onScheduleUpd
                                 </div>
                               );
                             })}
-                            {/* 태스크 표시 (캘린더뷰) */}
-                            {showTasks && (() => {
-                              const dayTasks = getTasksForDate(cell.fullDate);
-                              if (!dayTasks.length) return null;
-                              const LIMIT = 3;
-                              const visible = dayTasks.slice(0, LIMIT);
-                              const overflow = dayTasks.length - LIMIT;
-                              return (
-                                <div className="mt-0.5 space-y-0.5 px-0.5">
-                                  {visible.map(task => {
-                                    const dept = departments.find(d => d.id === task.departmentId);
-                                    const sch = schedules.find(s => s.id === task.scheduleId);
-                                    const isOverdue = task.status !== 'done' && task.dueDate < todayStr;
-                                    return (
-                                      <div
-                                        key={task.id}
-                                        title={`[${sch?.storeName || ''}] ${task.title} (${dept?.name || ''})`}
-                                        className={`flex items-center gap-1 px-1 py-0.5 rounded text-[9px] leading-none font-medium truncate ${isOverdue ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' : task.status === 'done' ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 line-through' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}`}
-                                      >
-                                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${dept?.color || 'bg-slate-400'}`} />
-                                        <span className="truncate">{sch?.storeName && <span className="font-bold mr-0.5">{sch.storeName.slice(0,3)}</span>}{task.title}</span>
-                                        <span className="ml-auto shrink-0">{TASK_STATUS_ICON[task.status]}</span>
-                                      </div>
-                                    );
-                                  })}
-                                  {overflow > 0 && (
-                                    <div className="text-[9px] text-slate-400 font-bold pl-1">+{overflow}개 더</div>
-                                  )}
-                                </div>
-                              );
-                            })()}
                           </div>
                         </div>
                       );

@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { db, auth, salesDb } from '../firebase';
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy, limit, getDoc, setDoc } from 'firebase/firestore';
 import { User, Ingredient, Department, BrandId } from '../types';
-import { Check, X, Trash2, ShieldAlert, Database, RefreshCw, AlertCircle, History, Key, Building2, ListChecks } from 'lucide-react';
+import { Check, X, Trash2, ShieldAlert, Database, RefreshCw, AlertCircle, History, Key, Building2, ListChecks, ClipboardList, Settings2 } from 'lucide-react';
 import { writeBatch } from 'firebase/firestore';
 import { useConfirm } from './ConfirmModal';
 import { useToast } from './Toast';
 import { DepartmentManager } from './admin/DepartmentManager';
 import { TaskTemplateManager } from './admin/TaskTemplateManager';
+import { WorkMasterManager } from './admin/WorkMasterManager';
 
 enum OperationType {
   CREATE = 'create',
@@ -75,10 +76,14 @@ export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients, act
     return () => unsub();
   }, [brandId]);
 
-  const handleSetDepartment = async (uid: string, departmentId: string) => {
+  const handleToggleUserDepartment = async (uid: string, departmentId: string, currentIds: string[] = []) => {
     try {
-      await updateDoc(doc(db, 'users', uid), { departmentId: departmentId || null });
-      toast.success('부서가 배정되었습니다.');
+      const newIds = currentIds.includes(departmentId)
+        ? currentIds.filter(id => id !== departmentId)
+        : [...currentIds, departmentId];
+      
+      await updateDoc(doc(db, 'users', uid), { departmentIds: newIds });
+      toast.success('부서 권한이 업데이트되었습니다.');
     } catch (error) {
       onFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
     }
@@ -281,17 +286,21 @@ export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients, act
               <tr key={user.uid} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
                 <td className="px-4 py-3 font-bold text-stone-900 dark:text-stone-100">{user.name}</td>
                 <td className="px-4 py-3">{user.email}</td>
-                <td className="px-4 py-3 text-center">
-                  <select
-                    value={user.departmentId || ''}
-                    onChange={e => handleSetDepartment(user.uid, e.target.value)}
-                    className="text-xs border border-stone-200 dark:border-stone-700 rounded px-1.5 py-1 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300"
-                  >
-                    <option value="">미배정</option>
-                    {departments.map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1 justify-center max-w-[200px] mx-auto">
+                    {departments.map(d => {
+                      const isAssigned = (user.departmentIds || []).includes(d.id);
+                      return (
+                        <button
+                          key={d.id}
+                          onClick={() => handleToggleUserDepartment(user.uid, d.id, user.departmentIds)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${isAssigned ? `${d.color} text-white border-transparent` : 'bg-white text-stone-400 border-stone-200 hover:border-stone-400'}`}
+                        >
+                          {d.name}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-center">
                   <span className={`px-2 py-1 rounded-sm text-[10px] font-bold border ${user.role === 'admin' ? 'bg-stone-800 border-stone-800 text-white' : 'bg-stone-100 border-stone-300 text-stone-600'}`}>
@@ -396,6 +405,18 @@ export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients, act
       </div>
       <div className="p-6">
         <TaskTemplateManager brandId={brandId} departments={departments} />
+      </div>
+    </div>
+
+    {/* 통합 업무 마스터 관리 */}
+    <div className="bg-[#FDFBF7] dark:bg-stone-900 rounded-sm border border-stone-300 dark:border-stone-800 overflow-hidden">
+      <div className="p-4 border-b-2 border-stone-800 dark:border-stone-600 bg-white dark:bg-stone-800/50 flex items-center gap-2">
+        <Settings2 className="text-stone-800 dark:text-stone-300" size={20} />
+        <h2 className="text-lg font-black tracking-tight text-stone-900 dark:text-white">업무 마스터 관리</h2>
+        <span className="text-xs text-stone-400 font-medium ml-1">일정 항목 및 체크리스트를 통합 관리합니다</span>
+      </div>
+      <div className="p-6">
+        <WorkMasterManager brandId={brandId} departments={departments} />
       </div>
     </div>
   </div>
