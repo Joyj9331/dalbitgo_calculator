@@ -182,7 +182,7 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [
       // task 카테고리 항목만 캘린더에 표시 (schedule_date는 anchor 계산용, 중복 방지)
       const computedDates = computeWorkItemDates(workItems, s);
       workItems.forEach(wt => {
-        if (wt.category !== 'task' || !wt.calendarVisible || wt.isArchived) return;
+        if (wt.category !== 'task' || wt.calendarVisible === false || wt.isArchived) return;
         const d = computedDates[wt.id];
         if (d && isDateInRange(dateStr, d.start, d.end)) {
           addEv(wt.id, wt.text, d.start, d.end, wt.departmentIds || (wt.departmentId ? [wt.departmentId] : []));

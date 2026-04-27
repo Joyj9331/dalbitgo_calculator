@@ -133,8 +133,22 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
     }
   }, [chatMessages, showAiModal]);
 
+  // franchise_schedules + team_settings 실시간 구독
   useEffect(() => {
-    fetchData();
+    setLoading(true);
+    const unsubSch = onSnapshot(
+      query(collection(db, 'franchise_schedules'), where('brandId', '==', brandId)),
+      (snap) => {
+        setSchedules(snap.docs.map(d => ({ ...d.data() as FranchiseSchedule, id: d.id })));
+        setLoading(false);
+      },
+      () => { toast.error('일정 데이터를 불러오지 못했습니다.'); setLoading(false); }
+    );
+    const unsubTeam = onSnapshot(
+      query(collection(db, 'team_settings'), where('brandId', '==', brandId)),
+      (snap) => { setTeams(snap.docs.map(d => ({ ...d.data() as TeamSetting, id: d.id }))); }
+    );
+    return () => { unsubSch(); unsubTeam(); };
   }, [brandId]);
 
   //   마스터 항목 통합 마이그레이션 및 실시간 구독
@@ -212,33 +226,6 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
     return () => unsub();
   }, [brandId]);
 
-  const fetchData = async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const [schSnap, teamSnap] = await Promise.all([
-        getDocs(collection(db, 'franchise_schedules')),
-        getDocs(collection(db, 'team_settings')),
-      ]);
-      const schData: FranchiseSchedule[] = [];
-      schSnap.forEach(d => {
-        const item = d.data() as FranchiseSchedule;
-        if (item.brandId === brandId) schData.push({ ...item, id: d.id });
-      });
-      setSchedules(schData);
-
-      const teamData: TeamSetting[] = [];
-      teamSnap.forEach(d => {
-        const item = d.data() as TeamSetting;
-        if (item.brandId === brandId) teamData.push({ ...item, id: d.id });
-      });
-      setTeams(teamData);
-
-    } catch (err) {
-      toast.error('일정 데이터를 불러오지 못했습니다.');
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
 
   const handleSaveSchedule = async (data: Partial<FranchiseSchedule>) => {
     try {
@@ -291,7 +278,7 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
       }
       setShowForm(false);
       setEditingData(null);
-      fetchData();
+      // onSnapshot이 자동으로 반영
     } catch (err) {
       console.error(err);
       toast.error('일정을 저장하지 못했습니다.');
@@ -306,7 +293,6 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
       await deleteDoc(doc(db, 'franchise_schedules', id));
       await logActivity('일정 삭제', `[${s?.storeName || '매장'}] 오픈 일정 삭제`);
       toast.success('일정 삭제됨');
-      fetchData();
     } catch (err) {
       toast.error('삭제 실패');
     }
@@ -331,7 +317,6 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
         await updateDoc(doc(db, 'franchise_schedules', scheduleId), { progressCheck: newProgress });
         await logActivity('진행 체크', `[${schedule.storeName}] 진행 항목 상태 변경`);
       }
-      fetchData(true);
     } catch(e) { console.error(e); }
   };
 
@@ -355,8 +340,15 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
     const currentData = (schedule as any).checklistData || {};
     const itemData = currentData[itemId] || { status: 0 };
 
-    // 💡 [독립성 보장] 시작일만 변경하고 종료일은 기존 고정 데이터를 유지하거나 시작일과 동일하게 설정
-    const finalEndDate = itemData.fixedEndDate || (itemData.fixedDate ? itemData.fixedDate : newStartDate);
+    // 기존 기간(duration)을 유지하며 종료일 재계산
+    let finalEndDate = newStartDate;
+    const prevStart = itemData.fixedDate;
+    const prevEnd = itemData.fixedEndDate;
+    if (prevStart && prevEnd && prevEnd > prevStart) {
+      const durMs = new Date(prevEnd).getTime() - new Date(prevStart).getTime();
+      const newEnd = new Date(new Date(newStartDate).getTime() + durMs);
+      finalEndDate = newEnd.toISOString().split('T')[0];
+    }
 
     // 1. 로컬 상태 즉시 업데이트 (사용자는 딜레이를 느끼지 못함)
     setSchedules(prev => prev.map(s => {
@@ -396,7 +388,6 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
       await logActivity('매장 일정 개별 변경', `${schedule.storeName}: ${workItem.text} 이동`);
     } catch (err) {
       toast.error('일정 저장 중 오류가 발생했습니다.');
-      fetchData(true); // 실패 시에만 원복을 위해 재로드
     }
   };
 
@@ -407,7 +398,6 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
       const s = schedules.find(x => x.id === id);
       await updateDoc(doc(db, 'franchise_schedules', id), { archived: true });
       await logActivity('일정 보관', `[${s?.storeName || '매장'}] 오픈 완료 및 보관함 이동`);
-      fetchData();
       toast.success('매장이 보관되었습니다.');
     } catch(e) { console.error(e); }
   };
@@ -1126,7 +1116,7 @@ ${transcript}`;
                             </button>
                             <div className="flex items-center gap-1 shrink-0 ml-2">
                                <button 
-                                 onClick={() => { updateDoc(doc(db, 'franchise_schedules', sch.id), { showInCalendar: sch.showInCalendar === false }); fetchData(); }}
+                                 onClick={() => { updateDoc(doc(db, 'franchise_schedules', sch.id), { showInCalendar: sch.showInCalendar === false }); }}
                                  className={`p-1.5 rounded-sm transition-colors border ${sch.showInCalendar !== false ? 'text-blue-800 border-blue-200 bg-blue-50 hover:bg-blue-100' : 'text-stone-400 border-stone-200 hover:bg-stone-100'}`}
                                  title={sch.showInCalendar !== false ? '달력 노출 중' : '달력 숨김'}
                                >
@@ -1242,7 +1232,6 @@ ${transcript}`;
             onClose={() => setShowStoreReg(false)}
             onCreated={(id) => {
               setShowStoreReg(false);
-              fetchData(true);
               setChecklistSelectedStoreId(id);
               setViewTab('store');
             }}
