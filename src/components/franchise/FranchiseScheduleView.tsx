@@ -66,21 +66,24 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
     constTypes: [], signTypes: [], kitchenVendors: [], preTrainingLocations: [], gasTypes: []
   });
 
-  // 💡 공통 코드 실시간 로드
+  // 💡 공통 코드 일회성 로드 (변경 빈도 낮음)
   useEffect(() => {
-    const unsub = onSnapshot(doc(mainDb, 'system_settings', 'config'), (snap) => {
-      if (snap.exists()) setSysConfig(snap.data() as SystemConfig);
+    let cancelled = false;
+    getDoc(doc(mainDb, 'system_settings', 'config')).then(snap => {
+      if (!cancelled && snap.exists()) setSysConfig(snap.data() as SystemConfig);
     });
-    return () => unsub();
+    return () => { cancelled = true; };
   }, []);
 
-  //  DB 부서 정보 로드
+  //  DB 부서 정보 일회성 로드
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'departments'), snap => {
+    let cancelled = false;
+    getDocs(collection(db, 'departments')).then(snap => {
+      if (cancelled) return;
       setDbDepartments(snap.docs.map(d => ({ id: d.id, ...d.data() } as Department))
         .filter(d => d.brandId === brandId));
     });
-    return () => unsub();
+    return () => { cancelled = true; };
   }, [brandId]);
   
   const [currentMonth, setCurrentMonth] = useState(new Date());

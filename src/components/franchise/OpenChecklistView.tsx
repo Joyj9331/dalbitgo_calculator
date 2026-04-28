@@ -6,7 +6,7 @@ import { useToast } from '../Toast';
 import { useConfirm } from '../ConfirmModal';
 import { uploadBytes, ref, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage, db, salesDb } from '../../firebase';
-import { doc, getDoc, onSnapshot, collection, updateDoc, query, where } from 'firebase/firestore';
+import { doc, getDoc, getDocs, onSnapshot, collection, updateDoc, query, where } from 'firebase/firestore';
 
 interface Props {
   schedules?: FranchiseSchedule[];
@@ -124,12 +124,14 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
     setDescModal(null);
   };
 
-  //  부서 정보 실시간 로드
+  //  부서 정보 일회성 로드 (변경 빈도 낮음, Firestore 비용 절감)
   useEffect(() => {
-    const unsub = onSnapshot(collection(salesDb, 'departments'), snap => {
+    let cancelled = false;
+    getDocs(collection(salesDb, 'departments')).then(snap => {
+      if (cancelled) return;
       setDbDepartments(snap.docs.map(d => ({ id: d.id, ...d.data() } as Department)));
     });
-    return () => unsub();
+    return () => { cancelled = true; };
   }, []);
 
   // 매장별 실제 태스크 데이터 로드 (실제 DB 연동)

@@ -6,7 +6,7 @@ import { addDays, diffDays, addExcludingSunday, getOvenInDate, getPreTrainingSta
 import { ProcessSettings, DEFAULT_MASTER_CHECKLIST, ChecklistMasterItem } from './ProcessMasterModal';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage, salesDb } from '../../firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 
 const CHECKLIST_STATUS_LABELS = ['미진행', '안내완료', '진행중', '완료'];
 const CHECKLIST_STATUS_CLASSES = [
@@ -75,14 +75,16 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
   const [selectedDeptId, setSelectedDeptId] = useState<string>('all');
   const [dbDepartments, setDbDepartments] = useState<Department[]>([]);
 
-  //  DB 부서 정보 실시간 로드
+  //  DB 부서 정보 일회성 로드 (변경 빈도 낮음)
   useEffect(() => {
-    const unsub = onSnapshot(collection(salesDb, 'departments'), snap => {
+    let cancelled = false;
+    getDocs(collection(salesDb, 'departments')).then(snap => {
+      if (cancelled) return;
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Department))
         .filter(d => d.brandId === (form.brandId || 'dalbitgo'));
       setDbDepartments(data);
     });
-    return () => unsub();
+    return () => { cancelled = true; };
   }, [form.brandId]);
   
   //  신규: 일정 자동 계산 토글 (AI가 자동계산을 요청했거나 기존 일정이 없으면 ON)

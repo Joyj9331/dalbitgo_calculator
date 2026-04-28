@@ -6,3 +6,13 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# 중복/유령 파일 재발 방지 (CLAUDE.md 참고)
+/src/AdminPanel.tsx
+/src/ScheduleFormModal.tsx
+/src/components/franchise/types.ts
+/src/myExcel*.csv
+/src/components/marketing/myExcel*.csv
+
+# Python 봇 서브모듈 (별도 관리)
+dalbitgo-review/

@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ 작업 시작 전 필수
+
+작업 전 다음 두 파일을 **반드시** 먼저 읽을 것:
+1. **`HANDOFF.md`** — 두 AI 환경 작업 규칙
+2. **`WORKLOG.md`** — 가장 최근 작업 내역과 미완 작업
+3. 작업 종료 시 **반드시 `WORKLOG.md` 상단에 작업 기록** 추가
+
 ## 프로젝트 개요
 
 새모양 F&B 그룹 **가맹관리시스템 인트라넷** — 달빛에구운고등어, 만수식당, 얌스 등 5개 외식 프랜차이즈 브랜드의 원가 계산, 식재료 관리, 가맹점 리뷰 관제를 통합 운영하는 내부 도구.

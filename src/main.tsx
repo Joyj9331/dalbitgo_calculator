@@ -4,13 +4,16 @@ import App from './App.tsx';
 import './index.css';
 import { ToastProvider } from './components/Toast.tsx';
 import { ConfirmProvider } from './components/ConfirmModal.tsx';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ToastProvider>
-      <ConfirmProvider>
-        <App />
-      </ConfirmProvider>
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <ConfirmProvider>
+          <App />
+        </ConfirmProvider>
+      </ToastProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

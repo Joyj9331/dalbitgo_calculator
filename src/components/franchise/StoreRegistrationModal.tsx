@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus } from 'lucide-react';
 import { salesDb as db, db as mainDb } from '../../firebase';
-import { collection, addDoc, onSnapshot, doc } from 'firebase/firestore';
+import { collection, addDoc, getDoc, doc } from 'firebase/firestore';
 import { FranchiseSchedule, BrandId, TeamSetting, SystemConfig } from '../../types';
 import { useToast } from '../Toast';
 
@@ -53,23 +53,22 @@ export function StoreRegistrationModal({ brandId, teams, schedules = [], onClose
     return nums.length > 0 ? Math.max(...nums) + 1 : 1;
   })();
 
-  // 💡 공통 코드 실시간 로드
+  // 💡 공통 코드 일회성 로드 (변경 빈도 낮음)
   useEffect(() => {
-    const unsub = onSnapshot(doc(mainDb, 'system_settings', 'config'), (snap) => {
-      if (snap.exists()) {
-        setSysConfig(snap.data() as SystemConfig);
-        // 기본값 설정
-        const data = snap.data() as SystemConfig;
-        setForm(prev => ({
-          ...prev,
-          constructionType: data.constTypes[0] || '',
-          signageType: data.signTypes[0] || '',
-          kitchenSupplier: data.kitchenVendors[0] || '',
-          gasType: data.gasTypes[0] || '',
-        }));
-      }
+    let cancelled = false;
+    getDoc(doc(mainDb, 'system_settings', 'config')).then(snap => {
+      if (cancelled || !snap.exists()) return;
+      const data = snap.data() as SystemConfig;
+      setSysConfig(data);
+      setForm(prev => ({
+        ...prev,
+        constructionType: data.constTypes[0] || '',
+        signageType: data.signTypes[0] || '',
+        kitchenSupplier: data.kitchenVendors[0] || '',
+        gasType: data.gasTypes[0] || '',
+      }));
     });
-    return () => unsub();
+    return () => { cancelled = true; };
   }, []);
 
   const [form, setForm] = useState({
