@@ -285,12 +285,13 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
     if (!selectedStore || !onUpdateSchedule) return;
     const currentData = getStoreData(selectedStore);
     
-    // 태스크인 경우 별도 컬렉션 업데이트
+    // 태스크인 경우 note1(비고)은 department_tasks에도 저장, note3(날짜)는 checklistData에 저장
     if (workItem.category === 'task' && (workItem as any).realTaskId) {
        if (field === 'note1') {
          updateDoc(doc(salesDb, 'department_tasks', (workItem as any).realTaskId), { note: value, updatedAt: new Date().toISOString() });
+         return; // note1은 task 문서에만 저장
        }
-       return; // checklistData 업데이트는 건너뜀 (또는 필요시 병행)
+       // note3(날짜) 등 나머지 필드는 아래 checklistData 경로로 저장
     }
 
     const itemData = currentData[itemId] || { status: 0 };
@@ -605,9 +606,11 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
                         </div>
                       );
                     } else if (item.inputType === 'date') {
+                      // task 타입은 캘린더 계산 날짜(uDate)를 폴백으로 표시
+                      const dateDisplayValue = itemData.note3 || (item.uType === 'task' ? item.uDate || '' : '');
                       inputHtml = (
                         <div className="flex flex-col md:flex-row md:items-center gap-2 w-full">
-                          <input type="date" className="flex-none w-full md:w-[130px] text-sm font-bold text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 rounded border px-2 py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800" value={itemData.note3 || ''} onChange={e => handleUpdateItem(item.id, 'note3', e.target.value, item)} />
+                          <input type="date" className="flex-none w-full md:w-[130px] text-sm font-bold text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 rounded border px-2 py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800" value={dateDisplayValue} onChange={e => handleUpdateItem(item.id, 'note3', e.target.value, item)} />
                           <NoteInput type="text" placeholder="비고 작성란" className="flex-1 min-w-0 text-sm border-slate-200 dark:border-slate-700 rounded border px-2 py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800" initialValue={itemData.note1 || ''} itemId={item.id} field="note1" workItem={item} onSave={handleUpdateItem} />
                         </div>
                       );
@@ -765,6 +768,23 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
                     } else {
                       inputHtml = <NoteInput type="text" placeholder="비고 작성란 (선택)" className="w-full text-sm border-slate-200 dark:border-slate-700 rounded border px-2 py-1.5 focus:border-blue-500 focus:outline-none bg-transparent hover:bg-white dark:hover:bg-slate-800 transition" initialValue={itemData.note1 || ''} itemId={item.id} field="note1" workItem={item} onSave={handleUpdateItem} />;
                     }
+
+                  // 태스크 타입이면서 날짜 위젯이 없는 inputType → 날짜 input 자동 추가
+                  const DATE_WIDGET_TYPES = ['date', 'file_date', 'hiorder', 'training_payment'];
+                  if (item.uType === 'task' && !DATE_WIDGET_TYPES.includes(item.inputType)) {
+                    const taskDateValue = itemData.note3 || item.uDate || '';
+                    inputHtml = (
+                      <div className="flex flex-col gap-2 w-full">
+                        <input
+                          type="date"
+                          className="flex-none w-full md:w-[130px] text-sm font-bold text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 rounded border px-2 py-1.5 focus:border-blue-500 focus:outline-none dark:bg-slate-800"
+                          value={taskDateValue}
+                          onChange={e => handleUpdateItem(item.id, 'note3', e.target.value, item)}
+                        />
+                        {inputHtml}
+                      </div>
+                    );
+                  }
                   }
 
                   // D-day 뱃지 계산
@@ -821,7 +841,7 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
                           {/* check 타입 + 날짜 위젯 없는 경우만 소제목 날짜 표시 */}
                           {item.uDate && item.uType === 'check' && !['date','file_date','hiorder','training_payment'].includes(item.inputType) && (
                             <p className="text-[11px] text-slate-400 mt-0.5">
-                              {item.uDate}{item.uEndDate ? ` ~ ${item.uEndDate}` : ''}
+                              {item.uDate}{item.uEndDate && item.uEndDate !== item.uDate ? ` ~ ${item.uEndDate}` : ''}
                             </p>
                           )}
                           {lastModLabel && (
