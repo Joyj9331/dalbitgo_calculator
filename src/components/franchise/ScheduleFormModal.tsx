@@ -440,14 +440,29 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
           </div>
           )}
 
+          {/* 공사 기간 — 하드코딩된 필수 시스템 필드 */}
+          <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border-2 border-blue-200 dark:border-blue-800">
+            <p className="text-xs font-black text-blue-700 dark:text-blue-400 mb-3 tracking-wider uppercase">공사 기간 (필수)</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>공사 시작일</label>
+                <input type="date" className={inputCls} value={form.constructionStart || ''} onChange={e => set('constructionStart', e.target.value)} />
+              </div>
+              <div>
+                <label className={labelCls}>공사 종료일</label>
+                <input type="date" className={inputCls} value={form.constructionEnd || ''} onChange={e => set('constructionEnd', e.target.value)} />
+              </div>
+            </div>
+          </div>
+
           <hr className="border-slate-100 dark:border-slate-800" />
 
           {/* 💡  마스터 설정 기반 동적 일정 렌더링 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {(() => {
-              // 1. 마스터 아이템 중 활성화된 일정 날짜 항목만 추출
+              // 1. 마스터 아이템 중 활성화된 일정 날짜 항목만 추출 (시스템 항목 제외 — 상단에 별도 표시)
               const masterDates = (processSettings?.masterItems || [])
-                .filter(item => item.category === 'schedule_date' && !item.isArchived)
+                .filter(item => item.category === 'schedule_date' && !item.isArchived && !item.isSystem)
                 .sort((a, b) => a.order - b.order);
               
               // 2. 부서별 그룹핑
@@ -552,75 +567,89 @@ export function ScheduleFormModal({ initial, teams, schedules, processSettings, 
             </>
           )}
 
-          {/* 체크리스트 섹션 (기존 매장 편집 시에만 표시) */}
+          {/* 부서별 태스크 현황 (기존 매장 편집 시에만 표시) */}
           {form.id && onUpdateSchedule && (() => {
-            //   masterItems에서 checklist 카테고리만 추출
-            const checklistItems = (processSettings?.masterItems || [])
-              .filter(item => item.category === 'checklist' && !item.isArchived)
+            const taskItems = (processSettings?.masterItems || [])
+              .filter(item => item.category === 'task' && !item.isArchived)
               .sort((a, b) => a.order - b.order);
 
             const checklistData: Record<string, any> = (form as any).checklistData || {};
-            const filteredItems = selectedDeptId === 'all'
-              ? checklistItems
-              : checklistItems.filter(item => {
-                  const ids = item.departmentIds?.length ? item.departmentIds : (item.departmentId ? [item.departmentId] : []);
-                  return ids.includes(selectedDeptId);
-                });
-            
-            if (filteredItems.length === 0) return null;
-            const completedCount = filteredItems.filter(item => (checklistData[item.id]?.status || 0) === 3).length;
+
+            // 부서별 그룹핑
+            const deptGroups: { dept: Department | null; deptId: string; items: typeof taskItems }[] = [];
+            const addedDepts = new Set<string>();
+
+            // 등록된 부서 순서대로
+            dbDepartments.forEach(dept => {
+              const items = taskItems.filter(i => {
+                const ids: string[] = i.departmentIds?.length ? i.departmentIds : (i.departmentId ? [i.departmentId] : []);
+                return ids.includes(dept.id);
+              });
+              if (items.length > 0) {
+                deptGroups.push({ dept, deptId: dept.id, items });
+                addedDepts.add(dept.id);
+              }
+            });
+            // 부서 미지정 태스크
+            const unassigned = taskItems.filter(i => {
+              const ids: string[] = i.departmentIds?.length ? i.departmentIds : (i.departmentId ? [i.departmentId] : []);
+              return ids.length === 0 || ids.every(id => !addedDepts.has(id));
+            });
+            if (unassigned.length > 0) deptGroups.push({ dept: null, deptId: 'unassigned', items: unassigned });
+
+            const visibleGroups = selectedDeptId === 'all'
+              ? deptGroups
+              : deptGroups.filter(g => g.deptId === selectedDeptId);
+
+            if (visibleGroups.length === 0) return null;
+
             return (
               <>
                 <hr className="border-slate-100 dark:border-slate-800" />
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div className="flex items-center gap-2">
-                    <ClipboardList size={16} className="text-blue-500" />
-                    <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm">오픈 체크리스트</h3>
-                    <span className="text-[10px] text-slate-500 ml-auto font-medium">
-                      {completedCount}/{filteredItems.length} 완료
-                    </span>
-                    {selectedDeptId !== 'all' && (
-                      <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">
-                        {dbDepartments.find(d => d.id === selectedDeptId)?.name || '해당 부서'}
-                      </span>
-                    )}
+                    <ClipboardList size={16} className="text-indigo-500" />
+                    <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm">부서별 태스크 현황</h3>
                   </div>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                    {filteredItems.map(item => {
-                      const status = checklistData[item.id]?.status || 0;
-                      const dept = dbDepartments.find(d => d.id === item.departmentId);
-                      return (
-                        <div key={item.id} className="flex items-center gap-3 px-3 py-2.5 bg-white dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-slate-800 dark:text-slate-200 truncate font-medium">{item.text}</p>
-                            {item.inputType === 'file' && checklistData[item.id]?.files?.length > 0 && (
-                              <p className="text-[10px] text-blue-500 font-bold mt-0.5">📎 파일 {checklistData[item.id].files.length}개 첨부됨</p>
-                            )}
-                          </div>
-                          {selectedDeptId === 'all' && dept && (
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold text-white ${dept.color} opacity-70 shrink-0`}>
-                              {dept.name}
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextStatus = (status + 1) % 4;
-                              const newChecklistData = {
-                                ...checklistData,
-                                [item.id]: { ...(checklistData[item.id] || {}), status: nextStatus }
-                              };
-                              setForm(prev => ({ ...prev, checklistData: newChecklistData } as any));
-                              onUpdateSchedule(form.id!, { checklistData: newChecklistData });
-                            }}
-                            className={`shrink-0 px-2.5 py-1 rounded-full border text-[10px] font-bold transition-all ${CHECKLIST_STATUS_CLASSES[status]}`}
-                          >
-                            {CHECKLIST_STATUS_LABELS[status]}
-                          </button>
+                  {visibleGroups.map(({ dept, deptId, items }) => {
+                    const doneCount = items.filter(i => (checklistData[i.id]?.status ?? 0) === 3).length;
+                    return (
+                      <div key={deptId} className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          {dept && <span className={`text-[10px] font-black text-white px-2 py-0.5 rounded ${dept.color}`}>{dept.name}</span>}
+                          {!dept && <span className="text-[10px] font-bold text-slate-500 px-2 py-0.5 rounded bg-slate-100">기타</span>}
+                          <span className="text-[10px] text-slate-400 font-medium">{doneCount}/{items.length} 완료</span>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                          {items.map(item => {
+                            const status: number = checklistData[item.id]?.status ?? 0;
+                            return (
+                              <div key={item.id} className="flex items-center gap-3 px-3 py-2.5 bg-white dark:bg-slate-800/30 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm font-medium truncate ${status === 3 ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>{item.text}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextStatus = (status + 1) % 4;
+                                    const newChecklistData = {
+                                      ...checklistData,
+                                      [item.id]: { ...(checklistData[item.id] || {}), status: nextStatus }
+                                    };
+                                    setForm(prev => ({ ...prev, checklistData: newChecklistData } as any));
+                                    onUpdateSchedule!(form.id!, { checklistData: newChecklistData });
+                                  }}
+                                  className={`shrink-0 px-2.5 py-1 rounded-full border text-[10px] font-bold transition-all ${CHECKLIST_STATUS_CLASSES[status]}`}
+                                >
+                                  {CHECKLIST_STATUS_LABELS[status]}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </>
             );

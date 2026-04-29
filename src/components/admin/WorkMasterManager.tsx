@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { salesDb as db } from '../../firebase';
 import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { BrandId, WorkItem, WorkItemCategory, WorkItemInputType, Department, FranchiseSchedule } from '../../types';
-import { Plus, Trash2, Archive, RotateCcw, GripVertical, Eye, EyeOff, Save, X, Info, Settings2, Check } from 'lucide-react';
+import { Plus, Trash2, Archive, RotateCcw, GripVertical, Eye, EyeOff, Save, X, Info, Settings2, Check, Lock } from 'lucide-react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS, useUniqueId } from '@dnd-kit/utilities';
@@ -180,22 +180,36 @@ function SortableWorkItemRow({
   }, [item.dDayEndOffset, item.dDayOffset]);
 
   return (
-    <tr ref={setNodeRef} style={style} className={`group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 ${item.isArchived ? 'opacity-50 grayscale' : ''}`}>
+    <tr ref={setNodeRef} style={style} className={`group bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50 ${item.isArchived ? 'opacity-50 grayscale' : ''} ${item.isSystem ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
       <td className="p-3 border-b border-slate-100 dark:border-slate-800">
-        <div {...attributes} {...listeners} className="cursor-grab text-slate-300 hover:text-slate-500">
-          <GripVertical size={16} />
-        </div>
+        {item.isSystem ? (
+          <span className="text-amber-400" title="시스템 필수 항목 (이동 불가)"><Lock size={14} /></span>
+        ) : (
+          <div {...attributes} {...listeners} className="cursor-grab text-slate-300 hover:text-slate-500">
+            <GripVertical size={16} />
+          </div>
+        )}
       </td>
       <td className="p-3 border-b border-slate-100 dark:border-slate-800">
-        <input
-          className="w-full bg-transparent border-none focus:ring-0 font-bold text-sm"
-          value={localText}
-          onChange={e => setLocalText(e.target.value)}
-          onFocus={() => { isFocused.current = true; }}
-          onBlur={() => { isFocused.current = false; onUpdate(item.id, { text: localText }); }}
-        />
+        {item.isSystem ? (
+          <span className="font-black text-sm text-amber-700 dark:text-amber-400 flex items-center gap-1">
+            {item.text}
+            <span className="text-[9px] font-bold px-1 py-0.5 bg-amber-100 dark:bg-amber-900/30 rounded text-amber-600 dark:text-amber-400">시스템</span>
+          </span>
+        ) : (
+          <input
+            className="w-full bg-transparent border-none focus:ring-0 font-bold text-sm"
+            value={localText}
+            onChange={e => setLocalText(e.target.value)}
+            onFocus={() => { isFocused.current = true; }}
+            onBlur={() => { isFocused.current = false; onUpdate(item.id, { text: localText }); }}
+          />
+        )}
       </td>
       <td className="p-3 border-b border-slate-100 dark:border-slate-800">
+        {item.isSystem ? (
+          <span className="text-xs font-bold text-slate-500">일정 날짜</span>
+        ) : (
         <select
           className="text-xs border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800"
           value={item.category}
@@ -204,6 +218,7 @@ function SortableWorkItemRow({
           <option value="checklist">체크리스트</option>
           <option value="task">태스크</option>
         </select>
+        )}
       </td>
       <td className="p-3 border-b border-slate-100 dark:border-slate-800">
         {item.category === 'task' ? (
@@ -307,26 +322,42 @@ function SortableWorkItemRow({
       </td>
       <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-center">
         {(item.category === 'schedule_date' || item.category === 'task') && (
-          <button
-            onClick={() => onUpdate(item.id, { calendarVisible: !item.calendarVisible })}
-            className={`p-1 rounded transition-colors ${item.calendarVisible ? 'text-blue-500' : 'text-slate-300'}`}
-          >
-            {item.calendarVisible ? <Eye size={16} /> : <EyeOff size={16} />}
-          </button>
+          <div className="flex flex-col items-center gap-1">
+            <button
+              onClick={() => onUpdate(item.id, { calendarVisible: !item.calendarVisible })}
+              className={`p-1 rounded transition-colors ${item.calendarVisible ? 'text-blue-500' : 'text-slate-300'}`}
+              title="캘린더 표시"
+            >
+              {item.calendarVisible ? <Eye size={16} /> : <EyeOff size={16} />}
+            </button>
+            {item.category === 'task' && (
+              <button
+                onClick={() => onUpdate(item.id, { anchorLocked: !item.anchorLocked })}
+                className={`p-1 rounded transition-colors text-[9px] font-black ${item.anchorLocked ? 'text-amber-500' : 'text-slate-300'}`}
+                title={item.anchorLocked ? '기준일 연동 — 기준일 변경 시 태스크도 함께 이동 (드래그 불가)' : '날짜 독립 — 드래그로 수동 고정 가능'}
+              >
+                {item.anchorLocked ? '연동' : '독립'}
+              </button>
+            )}
+          </div>
         )}
       </td>
       <td className="p-3 border-b border-slate-100 dark:border-slate-800">
         <DescriptionCell item={item} onUpdate={onUpdate} />
       </td>
       <td className="p-3 border-b border-slate-100 dark:border-slate-800 text-right">
-        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={() => onToggleArchive(item.id)} className="p-1.5 text-slate-400 hover:text-orange-500">
-            {item.isArchived ? <RotateCcw size={14} /> : <Archive size={14} />}
-          </button>
-          <button onClick={() => onDelete(item.id)} className="p-1.5 text-slate-400 hover:text-rose-500">
-            <Trash2 size={14} />
-          </button>
-        </div>
+        {item.isSystem ? (
+          <span className="text-[9px] font-bold text-amber-500 px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/20 rounded">보호됨</span>
+        ) : (
+          <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => onToggleArchive(item.id)} className="p-1.5 text-slate-400 hover:text-orange-500">
+              {item.isArchived ? <RotateCcw size={14} /> : <Archive size={14} />}
+            </button>
+            <button onClick={() => onDelete(item.id)} className="p-1.5 text-slate-400 hover:text-rose-500">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        )}
       </td>
     </tr>
   );

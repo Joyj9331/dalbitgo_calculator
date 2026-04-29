@@ -11,16 +11,19 @@ const BG_CLASSES: Record<string, string> = {
   stone: 'bg-stone-500', zinc: 'bg-zinc-500', slate: 'bg-slate-500', neutral: 'bg-neutral-500'
 };
 
-function addBusinessDaysCalc(startDate: Date, days: number): Date {
+// 날짜를 계산한 후 토·일이면 직전 금요일로 스냅 (skipWeekends 옵션 적용)
+function snapToWeekday(d: Date): Date {
+  const result = new Date(d);
+  const dow = result.getDay();
+  if (dow === 6) result.setDate(result.getDate() - 1); // 토 → 금
+  else if (dow === 0) result.setDate(result.getDate() - 2); // 일 → 금
+  return result;
+}
+
+function addDaysSnap(startDate: Date, days: number): Date {
   const d = new Date(startDate);
-  const sign = days >= 0 ? 1 : -1;
-  let remaining = Math.abs(days);
-  while (remaining > 0) {
-    d.setDate(d.getDate() + sign);
-    const dow = d.getDay();
-    if (dow !== 0 && dow !== 6) remaining--;
-  }
-  return d;
+  d.setDate(d.getDate() + days);
+  return snapToWeekday(d);
 }
 
 function computeWorkItemDates(workItems: WorkItem[], schedule: FranchiseSchedule): Record<string, { start: string; end: string }> {
@@ -41,13 +44,18 @@ function computeWorkItemDates(workItems: WorkItem[], schedule: FranchiseSchedule
       if (!anchorDate) return;
 
       const base = new Date(anchorDate);
-      const startD = wt.skipWeekends ? addBusinessDaysCalc(base, wt.dDayOffset) : (() => { const d = new Date(base); d.setDate(d.getDate() + wt.dDayOffset!); return d; })();
+      const startD = wt.skipWeekends
+        ? addDaysSnap(base, wt.dDayOffset!)
+        : (() => { const d = new Date(base); d.setDate(d.getDate() + wt.dDayOffset!); return d; })();
       const startStr = startD.toISOString().split('T')[0];
       let endStr = startStr;
       if (wt.dDayEndOffset !== undefined && wt.dDayOffset !== undefined) {
         const durDays = wt.dDayEndOffset - wt.dDayOffset;
         if (durDays > 0) {
-          const endD = wt.skipWeekends ? addBusinessDaysCalc(new Date(startStr), durDays) : (() => { const d = new Date(startStr); d.setDate(d.getDate() + durDays); return d; })();
+          // 다일 이벤트: 종료일만 스냅. 토→금, 일→금 이동
+          const endD = wt.skipWeekends
+            ? snapToWeekday(new Date(new Date(startStr).setDate(new Date(startStr).getDate() + durDays)))
+            : (() => { const d = new Date(startStr); d.setDate(d.getDate() + durDays); return d; })();
           endStr = endD.toISOString().split('T')[0];
         }
       }
@@ -57,8 +65,10 @@ function computeWorkItemDates(workItems: WorkItem[], schedule: FranchiseSchedule
   }
 
   // 2단계: 매장별 fixedDate override 적용 (표시용, anchor 체인에는 영향 없음)
+  // anchorLocked=true 인 항목은 기준일자 연동 고정 — fixedDate 무시
   const displayDates: Record<string, { start: string; end: string }> = { ...pureDates };
   workItems.forEach(wt => {
+    if (wt.anchorLocked) return;
     const fixedDate = schedule.checklistData?.[wt.id]?.fixedDate;
     if (!fixedDate) return;
     const orig = pureDates[wt.id];
@@ -85,13 +95,15 @@ interface Props {
   workItems?: WorkItem[]; // taskItems에서 workItems로 이름 변경 및 통합
   onScheduleUpdate: (id: string, updates: Partial<FranchiseSchedule>, logDetails?: string) => Promise<void>;
   onTaskOffsetUpdate?: (scheduleId: string, taskItemId: string, diffDays: number, newStartDate: string) => Promise<void>;
-  onEditStore?: (id: string) => void;
+  onEditStore?: (id: string, workItemId?: string) => void;
   onOpenForm?: (id: string) => void;
   phaseVisibility?: Record<string, boolean>;
   selectedDeptFilter?: string;
 }
 
 export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [], onScheduleUpdate, onTaskOffsetUpdate, onEditStore, onOpenForm, phaseVisibility = {}, selectedDeptFilter = 'all' }: Props) {
+  const todayStr = new Date().toISOString().split('T')[0];
+
   //  모바일(화면 너비 768px 미만)일 경우 기본값을 '리스트 뷰'로 설정
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>(
     typeof window !== 'undefined' && window.innerWidth < 768 ? 'list' : 'calendar'
@@ -162,7 +174,7 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [
       const colorCode = s.colorCode || 'slate';
       const bgClass = BG_CLASSES[colorCode] || 'bg-slate-500';
 
-      const addEv = (id: string, name: string, start: string, end: string, depts: string | string[] | undefined, isCustom: boolean = false) => {
+      const addEv = (id: string, name: string, start: string, end: string, depts: string | string[] | undefined, isCustom: boolean = false, isLocked: boolean = false, isIncomplete: boolean = false) => {
         if (!start) return;
         
         if (selectedDeptFilter !== 'all' && depts) {
@@ -191,7 +203,9 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [
           isActuallyEnd: !isDateInRange(tomorrow, start, end),
           duration,
           fullDate: dateStr,
-          isCustom
+          isCustom,
+          isLocked,
+          isIncomplete
         });
       };
 
@@ -203,7 +217,10 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [
         if (selectedDeptFilter === 'all' && wt.calendarVisible === false) return;
         const d = computedDates[wt.id];
         if (d && isDateInRange(dateStr, d.start, d.end)) {
-          addEv(wt.id, wt.text, d.start, d.end, wt.departmentIds || (wt.departmentId ? [wt.departmentId] : []));
+          const taskStatus = (s.checklistData as any)?.[wt.id]?.status ?? 0;
+          // 기간 초과(오늘 > 종료일) + 미완료일 때만 overdue
+          const isOverdue = taskStatus < 3 && todayStr > d.end;
+          addEv(wt.id, wt.text, d.start, d.end, wt.departmentIds || (wt.departmentId ? [wt.departmentId] : []), false, !!wt.anchorLocked, isOverdue);
         }
       });
 
@@ -255,8 +272,9 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [
           updates.customPhases = newArr;
        }
     } else {
-      // 💡 [수정] 모든 마스터 항목(일정/태스크)은 통합 핸들러로 전달
       const workItem = workItems.find(wi => wi.id === phaseId);
+      // anchorLocked 항목은 드래그 이동 불가
+      if (workItem?.anchorLocked) return;
       if (workItem && onTaskOffsetUpdate) {
         await onTaskOffsetUpdate(scheduleId, phaseId, diffDays, droppedDate);
         return;
@@ -280,7 +298,6 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [
     weeks.push(cells.slice(i, i+7));
   }
 
-  const todayStr = new Date().toISOString().split('T')[0];
   const agendaDays = cells.filter(cell => cell.isCurrentMonth && getEventsForDate(cell.fullDate).length > 0);
 
   return (
@@ -398,10 +415,10 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [
                                 <div
                                   key={tIdx}
                                   onClick={(e) => openPopover(e, ev)}
-                                  className={`relative h-[38px] flex items-center cursor-pointer hover:brightness-90 ${ev.bgClass} ${roundedCls} border-y border-black/10 transition-colors z-10`}
-                                  title={`[${ev.team}] ${ev.storeName} · ${ev.phaseName}`}
-                                  draggable
-                                  onDragStart={(e) => handleDragStart(e, ev.scheduleId, ev.phaseId, ev.phaseName, cell.fullDate, ev.isCustom)}
+                                  className={`relative h-[38px] flex items-center ${ev.isLocked ? 'cursor-not-allowed' : 'cursor-pointer hover:brightness-90'} ${ev.bgClass} ${roundedCls} z-10 transition-colors ${selectedDeptFilter !== 'all' && ev.isIncomplete ? 'border-2 border-white/70 animate-pulse ring-2 ring-rose-400 ring-offset-1' : 'border-y border-black/10'}`}
+                                  title={ev.isLocked ? `[고정] ${ev.storeName} · ${ev.phaseName}` : `[${ev.team}] ${ev.storeName} · ${ev.phaseName}${selectedDeptFilter !== 'all' && ev.isIncomplete ? ' ⚠ 미완료' : ''}`}
+                                  draggable={!ev.isLocked}
+                                  onDragStart={ev.isLocked ? undefined : (e) => handleDragStart(e, ev.scheduleId, ev.phaseId, ev.phaseName, cell.fullDate, ev.isCustom)}
                                 >
                                   {showText && (
                                     <div className={`absolute inset-y-0 flex items-center px-1.5 pointer-events-none z-20 ${cIdx === 6 ? 'right-0' : 'left-0'}`}>
@@ -436,7 +453,7 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [
             {popover.ev.storeName}
           </p>
           <button
-            onClick={() => { setPopover(null); if (onEditStore) onEditStore(popover.ev.scheduleId); }}
+            onClick={() => { setPopover(null); if (onEditStore) onEditStore(popover.ev.scheduleId, popover.ev.phaseId); }}
             className="w-full flex items-center gap-2 px-3 py-2 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition-colors"
           >
             <CheckSquare size={14} className="text-indigo-500" /> 체크리스트 열기

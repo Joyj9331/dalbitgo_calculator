@@ -26,6 +26,95 @@
 
 ---
 
+## 2026-04-29 심야 — Claude Code
+
+### 완료
+- ScheduleFormModal: 상단에 "공사 기간 (필수)" 파란 박스 하드코딩 (constructionStart/End 날짜 입력)
+- ScheduleFormModal: 하단 체크리스트 → 부서별 태스크 상태 뷰로 교체 (부서 색상 뱃지 + 완료율 + 상태 사이클 버튼)
+- 캘린더 애니메이션 조건 강화: 미완료이면서 일정 초과(오늘 > 종료일)일 때만 pulse 애니메이션
+- FranchiseScheduleView: 매장 카드 사이드바에서 태스크 미완료 뱃지 제거
+- Vercel 배포 완료 (git push origin main)
+
+### 주의 / 메모
+- todayStr을 ScheduleCalendar 컴포넌트 스코프 최상단에 선언 (렌더 내부 이동 시 getEventsForDate 접근 불가)
+- isSystem 항목은 ScheduleFormModal 동적 masterDates 렌더에서 필터링됨 (공사시작/종료는 하드코딩 섹션으로만 표시)
+
+---
+
+## 2026-04-29 야간 — Claude Code
+
+### 완료
+- 체크리스트 부서탭 옆 미완료 카운트 뱃지 (빨간 원형) 추가 — 전체탭 포함
+- 캘린더 미완료 태스크 강조: 부서 필터 선택 시 미완료 이벤트 바에 pulse 애니메이션 + rose 링 테두리
+- 공사시작/종료 시스템 항목 보호 구조 구축:
+  - `WorkItem.isSystem` 타입 추가
+  - FranchiseScheduleView 로드 시 2차 마이그레이션 자동 실행 (sch_constructionStart, sch_constructionEnd → isSystem:true, 명칭 고정)
+  - WorkMasterManager에서 isSystem 항목 = 이름 수정 불가, 드래그 불가, 삭제 불가 (황색 "보호됨" 뱃지)
+
+### 주의 / 메모
+- 마이그레이션은 자동 실행됨 (brandId 변경될 때마다 점검) — 이미 완료된 경우 재실행 안 함
+- `animate-pulse`는 Tailwind 기본 클래스 (별도 CSS 불필요)
+- 공사시작/종료를 Firebase masterItems에서 중복 관리하던 구조가 버그 원인이었음 → isSystem으로 잠가 해결
+
+---
+
+## 2026-04-29 저녁 — Claude Code
+
+### 완료
+- 태스크 미완료 알림을 부서별로 분리 표시 (OpenChecklistView 사이드바 + FranchiseScheduleView 매장 카드 양쪽)
+- WorkMasterManager의 anchorLocked 레이블 수정: "고정/자유" → "연동/독립" (동작이 명확히 구분됨)
+
+### anchorLocked 동작 정리 (중요)
+- `anchorLocked=연동`: fixedDate 무시, 항상 D-day 재계산 → **기준일(constructionStart 등) 변경 시 태스크 날짜도 함께 이동**
+- `anchorLocked=독립`: 드래그한 fixedDate 우선 사용 → 기준일이 바뀌어도 태스크 날짜 불변 (수동 고정)
+
+### 다음에 이어할 것
+- (동일)
+
+---
+
+## 2026-04-29 오후 — Claude Code
+
+### 완료
+- Issue 1: StoreRegistrationModal 제거 → ScheduleFormModal로 통일 (신규/수정 동일 팝업)
+- Issue 2: skipWeekends 로직 변경 — 영업일 누적 계산 → "날짜 계산 후 토·일이면 직전 금요일로 스냅" (단일·다일 이벤트 모두 적용)
+- Issue 3 리뷰: anchorLocked 항목 드래그 차단 (캘린더에서 cursor-not-allowed + draggable=false + handleDrop 차단), 이벤트 객체에 isLocked 전파
+
+### 미완 / 진행 중
+- 없음
+
+### 다음에 이어할 것
+- task 상태 이중화 문제: `checklistData[id].status`(0~3) vs `department_tasks.status`(pending/done 등)가 별도 관리됨. 장기적으로 단일 소스로 통합 검토 필요
+- `franchise_schedules`는 onSnapshot 구독 중 → 신규 등록 후 자동 목록 반영, 등록 후 해당 매장 체크리스트로 자동 이동하는 UX는 미구현 (사용자 요청 시 추가)
+
+### 주의 / 메모
+- skipWeekends가 적용된 기존 항목들은 이전 로직(영업일 계산)과 날짜가 달라질 수 있음. 실제 운영 중인 항목 날짜 검토 권장
+- StoreRegistrationModal 파일(`src/components/franchise/StoreRegistrationModal.tsx`)은 아직 디스크에 존재하나 미사용 상태
+
+---
+
+## 2026-04-29 — Claude Code
+
+### 완료
+- Issue 4: 2개월 캘린더 두 번째 `ScheduleCalendar`에 `selectedDeptFilter` prop 누락 → 추가
+- Issue 1: 캘린더 이벤트 클릭 시 해당 체크리스트 항목으로 자동 스크롤 (2초 하이라이트 포함) — `initialScrollToItemId` prop 체인으로 구현
+- Issue 2: 매장 사이드바에 태스크 미완료 뱃지 표시 (`태스크 N미완` — rose색 뱃지)
+- Issue 3: `WorkItem.anchorLocked` 타입 추가, WorkMasterManager에 고정/자유 토글 버튼, `computeWorkItemDates`(캘린더)·`unifiedList`(체크리스트) 양쪽에 `anchorLocked` 시 fixedDate override 무시 처리
+
+### 미완 / 진행 중
+- 없음
+
+### 다음에 이어할 것
+- `src/App.tsx` 분리 (1644줄 → 라우터/사이드바/홈 별도 파일)
+- slate → stone 색상 통일 (AdminPanel, Auth, 일부 모달)
+- 라우트별 lazy import (번들 2.1MB 분할)
+
+### 주의 / 메모
+- `anchorLocked=true` 항목은 드래그해도 Firestore에 fixedDate는 저장되지만 표시는 D-day 계산값 사용. 필요시 `handleTaskOffsetUpdate`에서 anchorLocked 체크 추가 검토 가능
+- task 미완료 집계는 `checklistData[id].status === 3` 기준 (DepartmentTask 별도 onSnapshot과 다를 수 있음 — 허용 범위)
+
+---
+
 ## 2026-04-28 저녁 — Claude Code
 
 ### 완료

@@ -14,7 +14,6 @@ import { ScheduleFormModal } from './ScheduleFormModal';
 import { TeamSettingsModal } from './TeamSettingsModal';
 import { OpenChecklistView } from './OpenChecklistView';
 import { DepartmentTaskView } from './DepartmentTaskView';
-import { StoreRegistrationModal } from './StoreRegistrationModal';
 import { addDays } from '../../utils';
 import {
   ProcessSettings,
@@ -91,6 +90,7 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
   const [editingData, setEditingData] = useState<Partial<FranchiseSchedule> | null>(null);
   const [showStoreReg, setShowStoreReg] = useState(false);
   const [checklistSelectedStoreId, setChecklistSelectedStoreId] = useState<string | null>(null);
+  const [checklistScrollToItemId, setChecklistScrollToItemId] = useState<string | undefined>(undefined);
   const [showTeamSettings, setShowTeamSettings] = useState(false);
   const [processSettings, setProcessSettings] = useState<ProcessSettings>(DEFAULT_PROCESS_SETTINGS);
   
@@ -227,7 +227,52 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
           if (!cancelled && snap2.exists()) setProcessSettings(snap2.data() as ProcessSettings);
         }
       } else {
-        if (!cancelled) setProcessSettings(data);
+        // 2차 마이그레이션: 공사시작/종료를 isSystem으로 보호 + 명칭 고정
+        const SYSTEM_CONSTRUCTION_IDS = ['sch_constructionStart', 'sch_constructionEnd'];
+        const SYSTEM_LABELS: Record<string, string> = {
+          sch_constructionStart: '공사 시작일',
+          sch_constructionEnd: '공사 종료일',
+        };
+        const items: WorkItem[] = data.masterItems || [];
+        let needsSystemMigration = items.some(i =>
+          SYSTEM_CONSTRUCTION_IDS.includes(i.id) && (!i.isSystem || i.text !== SYSTEM_LABELS[i.id])
+        );
+        // 시스템 항목이 아예 없는 경우도 체크
+        const missingSystem = SYSTEM_CONSTRUCTION_IDS.filter(id => !items.find(i => i.id === id));
+        if (missingSystem.length > 0) needsSystemMigration = true;
+
+        if (needsSystemMigration && !cancelled) {
+          let updatedItems = items.map(i =>
+            SYSTEM_CONSTRUCTION_IDS.includes(i.id)
+              ? { ...i, isSystem: true, text: SYSTEM_LABELS[i.id] }
+              : i
+          );
+          // 없는 시스템 항목 추가 (맨 앞에)
+          missingSystem.forEach(id => {
+            const schField = id === 'sch_constructionStart' ? 'constructionStart' : 'constructionEnd';
+            updatedItems = [
+              {
+                id,
+                text: SYSTEM_LABELS[id],
+                category: 'schedule_date' as any,
+                inputType: 'date' as any,
+                scheduleField: schField as any,
+                isSystem: true,
+                calendarVisible: true,
+                order: -1,
+                isArchived: false,
+              },
+              ...updatedItems,
+            ];
+          });
+          // order 재정렬
+          updatedItems = updatedItems.map((i, idx) => ({ ...i, order: idx }));
+          await updateDoc(doc(db, 'process_settings', brandId), { masterItems: scrubData(updatedItems) });
+          const snap2 = await getDoc(doc(db, 'process_settings', brandId));
+          if (!cancelled && snap2.exists()) setProcessSettings(snap2.data() as ProcessSettings);
+        } else {
+          if (!cancelled) setProcessSettings(data);
+        }
       }
     };
     load();
@@ -1062,7 +1107,7 @@ ${transcript}`;
                    workItems={(processSettings.masterItems || []).filter(i => !i.isArchived)}
                    phaseVisibility={processSettings.phaseVisibility}
                    selectedDeptFilter={selectedDeptFilter}
-                   onEditStore={(id) => { setChecklistSelectedStoreId(id); setViewTab('store'); }}
+                   onEditStore={(id, workItemId) => { setChecklistSelectedStoreId(id); setChecklistScrollToItemId(workItemId); setViewTab('store'); }}
                    onOpenForm={(id) => { const s = schedules.find(x => x.id === id); if (s) { setEditingData(s); setShowForm(true); } }}
                    onTaskOffsetUpdate={handleTaskOffsetUpdate}
                    onScheduleUpdate={async (id, data, logDetails) => {
@@ -1079,7 +1124,8 @@ ${transcript}`;
                      teams={teams}
                      workItems={(processSettings.masterItems || []).filter(i => !i.isArchived)}
                      phaseVisibility={processSettings.phaseVisibility}
-                     onEditStore={(id) => { setChecklistSelectedStoreId(id); setViewTab('store'); }}
+                     selectedDeptFilter={selectedDeptFilter}
+                     onEditStore={(id, workItemId) => { setChecklistSelectedStoreId(id); setChecklistScrollToItemId(workItemId); setViewTab('store'); }}
                      onOpenForm={(id) => { const s = schedules.find(x => x.id === id); if (s) { setEditingData(s); setShowForm(true); } }}
                      onTaskOffsetUpdate={handleTaskOffsetUpdate}
                      onScheduleUpdate={async (id, data, logDetails) => {
@@ -1193,7 +1239,8 @@ ${transcript}`;
           currentUser={currentUser}
           processSettings={processSettings}
           initialSelectedStoreId={checklistSelectedStoreId}
-          onClearInitialStore={() => setChecklistSelectedStoreId(null)}
+          initialScrollToItemId={checklistScrollToItemId}
+          onClearInitialStore={() => { setChecklistSelectedStoreId(null); setChecklistScrollToItemId(undefined); }}
           onNewStore={() => setShowStoreReg(true)}
           onUpdateProgress={handleUpdateProgress}
           onUpdateSchedule={async (id, data) => {
@@ -1230,16 +1277,16 @@ ${transcript}`;
         )}
 
         {showStoreReg && (
-          <StoreRegistrationModal
-            brandId={brandId}
+          <ScheduleFormModal
+            initial={{ brandId, storeNumber: `${nextStoreNumber}호`, showInCalendar: true, archived: false, checklistData: {} }}
             teams={teams}
             schedules={schedules}
-            onClose={() => setShowStoreReg(false)}
-            onCreated={(id) => {
+            processSettings={processSettings}
+            onSave={async (data) => {
+              await handleSaveSchedule(data);
               setShowStoreReg(false);
-              setChecklistSelectedStoreId(id);
-              setViewTab('store');
             }}
+            onClose={() => setShowStoreReg(false)}
           />
         )}
 

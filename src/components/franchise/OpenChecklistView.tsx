@@ -13,6 +13,7 @@ interface Props {
   currentUser: User | null;
   processSettings?: ProcessSettings;
   initialSelectedStoreId?: string | null;
+  initialScrollToItemId?: string;
   onClearInitialStore?: () => void;
   onNewStore?: () => void;
   onUpdateProgress?: (scheduleId: string, checkId: string, isCustom: boolean, current: boolean) => void;
@@ -21,17 +22,19 @@ interface Props {
   onOpenForm?: (scheduleId: string) => void;
 }
 
-// 주말(토·일)을 건너뛰며 n 영업일 후 날짜를 반환
+// 토·일이면 직전 금요일로 스냅 (skipWeekends 적용 시 사용)
+function snapToWeekday(d: Date): Date {
+  const result = new Date(d);
+  const dow = result.getDay();
+  if (dow === 6) result.setDate(result.getDate() - 1);
+  else if (dow === 0) result.setDate(result.getDate() - 2);
+  return result;
+}
+
 function addBusinessDays(startDate: Date, days: number): Date {
   const d = new Date(startDate);
-  const sign = days >= 0 ? 1 : -1;
-  let remaining = Math.abs(days);
-  while (remaining > 0) {
-    d.setDate(d.getDate() + sign);
-    const dow = d.getDay();
-    if (dow !== 0 && dow !== 6) remaining--;
-  }
-  return d;
+  d.setDate(d.getDate() + days);
+  return snapToWeekday(d);
 }
 
 function NoteInput({ itemId, field, initialValue, workItem, onSave, className, placeholder, type = 'text' }: {
@@ -58,7 +61,7 @@ const STATUS_STAGES = [
   { label: '완료', class: 'bg-emerald-100 text-emerald-700 border-emerald-300 hover:bg-emerald-200 font-bold' }
 ];
 
-export function OpenChecklistView({ schedules, currentUser, processSettings, initialSelectedStoreId, onClearInitialStore, onNewStore, onUpdateSchedule, onUpdateMasterList, onOpenForm }: Props) {
+export function OpenChecklistView({ schedules, currentUser, processSettings, initialSelectedStoreId, initialScrollToItemId, onClearInitialStore, onNewStore, onUpdateSchedule, onUpdateMasterList, onOpenForm }: Props) {
   if (!schedules || !processSettings || !onUpdateSchedule) {
     return (
       <div className="py-20 text-center text-slate-400 font-bold">오픈 체크리스트 로딩 중...</div>
@@ -151,6 +154,19 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
       onClearInitialStore?.();
     }
   }, [initialSelectedStoreId]);
+
+  // 캘린더에서 특정 항목 클릭 시 해당 카드로 스크롤
+  useEffect(() => {
+    if (!initialScrollToItemId) return;
+    const el = document.getElementById(`checklist-item-${initialScrollToItemId}`);
+    if (el) {
+      setTimeout(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-indigo-400', 'ring-offset-1');
+        setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-400', 'ring-offset-1'), 2000);
+      }, 300);
+    }
+  }, [initialScrollToItemId, selectedStoreId]);
 
   const activeChecklist = useMemo(() =>
     (processSettings?.masterItems || [])
@@ -247,8 +263,8 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
     activeTaskItems.forEach(wt => {
       const realTask = storeTasks.find(t => t.title === wt.text);
       const statusMap: Record<DepartmentTaskStatus, number> = { pending: 0, in_progress: 2, done: 3, blocked: 0 };
-      // 드래그로 저장된 fixedDate가 있으면 우선 사용 (캘린더와 동기화)
-      const fixedDate = (selectedStore.checklistData as any)?.[wt.id]?.fixedDate;
+      // anchorLocked=true이면 기준일자 연동 고정 — fixedDate 무시
+      const fixedDate = wt.anchorLocked ? undefined : (selectedStore.checklistData as any)?.[wt.id]?.fixedDate;
       const calcStart = taskDates[wt.id] || '';
       const calcEnd = taskEndDates[wt.id] || '';
       const displayStart = fixedDate || calcStart;
@@ -468,6 +484,17 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
             const totalItems = activeChecklist.length;
             const checkedItems = activeChecklist.filter(i => data[i.id]?.status === 3).length;
             const progress = totalItems > 0 ? Math.round((checkedItems / totalItems) * 100) : 0;
+
+            // 부서별 태스크 미완료 집계
+            const deptIncomplete: { dept: Department; count: number }[] = dbDepartments.map(dept => {
+              const deptTasks = activeTaskItems.filter(i => {
+                const ids: string[] = i.departmentIds?.length ? i.departmentIds : (i.departmentId ? [i.departmentId] : []);
+                return ids.includes(dept.id);
+              });
+              const incomplete = deptTasks.filter(i => (data[i.id]?.status ?? 0) < 3).length;
+              return { dept, count: incomplete };
+            }).filter(x => x.count > 0);
+
             const isSelected = selectedStoreId === store.id;
             return (
               <button key={store.id} onClick={() => setSelectedStoreId(store.id)} className={`w-full text-left px-3 py-3 md:px-4 md:py-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors flex items-center gap-3 ${isSelected ? 'bg-indigo-50/70 border-l-4 border-indigo-500 dark:bg-indigo-900/20' : 'border-l-4 border-transparent'}`}>
@@ -479,6 +506,19 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
                   </div>
                   {store.team && (
                     <p className="text-[10px] font-bold text-indigo-400 dark:text-indigo-500 truncate mb-1">{store.team}</p>
+                  )}
+                  {/* 부서별 미완료 태스크 뱃지 */}
+                  {deptIncomplete.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1.5">
+                      {deptIncomplete.map(({ dept, count }) => (
+                        <span
+                          key={dept.id}
+                          className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800"
+                        >
+                          {dept.name} {count}
+                        </span>
+                      ))}
+                    </div>
                   )}
                   <div className="flex items-center gap-1.5">
                     <div className="flex-1 h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -536,10 +576,34 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
 
             {/* 부서 필터 탭 */}
             <div className="flex gap-0 overflow-x-auto hide-scrollbar border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 print:hidden shrink-0">
-              <button onClick={() => setSelectedDeptFilter('all')} className={`shrink-0 px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap ${selectedDeptFilter === 'all' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>전체</button>
-              {dbDepartments.map(dept => (
-                <button key={dept.id} onClick={() => setSelectedDeptFilter(dept.id)} className={`shrink-0 px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap ${selectedDeptFilter === dept.id ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>{dept.name}</button>
-              ))}
+              {(() => {
+                // 전체 탭 미완료 수
+                const storeData = getStoreData(selectedStore);
+                const totalIncomplete = unifiedList.filter(i =>
+                  i.uType !== 'date' && (i.uStatus ?? storeData[i.id]?.status ?? 0) < 3
+                ).length;
+                return (
+                  <button onClick={() => setSelectedDeptFilter('all')} className={`shrink-0 px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${selectedDeptFilter === 'all' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                    전체
+                    {totalIncomplete > 0 && <span className="text-[10px] font-black px-1 py-0.5 rounded-full bg-rose-500 text-white leading-none">{totalIncomplete}</span>}
+                  </button>
+                );
+              })()}
+              {dbDepartments.map(dept => {
+                const storeData = getStoreData(selectedStore);
+                const deptItems = unifiedList.filter(i => {
+                  if (i.uType === 'date') return false;
+                  const ids: string[] = i.departmentIds?.length ? i.departmentIds : (i.departmentId ? [i.departmentId] : []);
+                  return ids.includes(dept.id);
+                });
+                const deptIncomplete = deptItems.filter(i => (i.uStatus ?? storeData[i.id]?.status ?? 0) < 3).length;
+                return (
+                  <button key={dept.id} onClick={() => setSelectedDeptFilter(dept.id)} className={`shrink-0 px-4 py-3 text-xs font-bold border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${selectedDeptFilter === dept.id ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-white dark:bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                    {dept.name}
+                    {deptIncomplete > 0 && <span className="text-[10px] font-black px-1 py-0.5 rounded-full bg-rose-500 text-white leading-none">{deptIncomplete}</span>}
+                  </button>
+                );
+              })}
             </div>
 
             {/* ── 통합 스크롤 뷰 ── */}
@@ -838,7 +902,8 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
 
                   return (
                     <div key={`${item.uType}-${item.id}`}
-                      className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                      id={`checklist-item-${item.id}`}
+                      className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-shadow duration-500">
                       {/* 카드 상단: 상태버튼(왼) + 제목/날짜 + D-day뱃지(우) */}
                       <div className="flex items-center gap-3 px-4 py-3">
                         {/* 상태 버튼 — 왼쪽 */}
