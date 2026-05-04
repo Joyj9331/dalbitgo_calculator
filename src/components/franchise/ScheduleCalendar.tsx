@@ -290,7 +290,11 @@ export function ScheduleCalendar({ schedules, currentMonth, teams, workItems = [
   const openPopover = (e: React.MouseEvent, ev: any) => {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setPopover({ ev, x: rect.left + window.scrollX, y: rect.bottom + window.scrollY + 6 });
+    const popoverHeight = 120;
+    const y = rect.bottom + 6 + popoverHeight > window.innerHeight
+      ? rect.top - popoverHeight - 6
+      : rect.bottom + 6;
+    setPopover({ ev, x: rect.left, y });
   };
 
   const weeks = [];
