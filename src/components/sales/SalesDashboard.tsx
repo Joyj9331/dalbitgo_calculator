@@ -13,9 +13,10 @@ interface Props {
   activeBrand: string | null;
   menus: Menu[];
   ingredients: Ingredient[];
+  isReadOnly?: boolean;
 }
 
-export function SalesDashboard({ activeBrand, menus, ingredients }: Props) {
+export function SalesDashboard({ activeBrand, menus, ingredients, isReadOnly = false }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('monthly');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -32,8 +33,10 @@ export function SalesDashboard({ activeBrand, menus, ingredients }: Props) {
     { key: 'monthly',      label: '월별 분석',        icon: <LayoutDashboard size={16} /> },
     { key: 'daily',        label: '일일 보고',         icon: <CalendarDays size={16} /> },
     { key: 'profitability',label: '수익성 분석',       icon: <TrendingUp size={16} /> },
-    { key: 'menu_upload',  label: '메뉴 매출 업로드',  icon: <FileBarChart size={16} /> },
-    { key: 'import',       label: '관리자 데이터 관리', icon: <UploadCloud size={16} /> },
+    ...(!isReadOnly ? [
+      { key: 'menu_upload' as Tab,  label: '메뉴 매출 업로드',  icon: <FileBarChart size={16} /> },
+      { key: 'import' as Tab,       label: '관리자 데이터 관리', icon: <UploadCloud size={16} /> },
+    ] : []),
   ];
 
   return (

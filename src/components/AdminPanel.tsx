@@ -8,6 +8,7 @@ import { useConfirm } from './ConfirmModal';
 import { useToast } from './Toast';
 import { DepartmentManager } from './admin/DepartmentManager';
 import { WorkMasterManager } from './admin/WorkMasterManager';
+import { UserPermissionManager } from './admin/UserPermissionManager';
 
 enum OperationType {
   CREATE = 'create',
@@ -476,10 +477,11 @@ export const AdminPanel: React.FC<Props> = ({ onFirestoreError, ingredients, cur
 };
 
 function ProcessManager({ brandId, departments }: { brandId: BrandId; departments: Department[] }) {
-  const [tab, setTab] = useState<'work' | 'dept'>('work');
+  const [tab, setTab] = useState<'work' | 'dept' | 'permission'>('work');
   const TABS = [
     { id: 'work' as const, label: '업무 항목 관리' },
     { id: 'dept' as const, label: '부서 관리' },
+    { id: 'permission' as const, label: '권한 관리' },
   ];
   return (
     <div className="bg-[#FDFBF7] dark:bg-stone-900 rounded-sm border border-stone-300 dark:border-stone-800 overflow-hidden">
@@ -501,6 +503,7 @@ function ProcessManager({ brandId, departments }: { brandId: BrandId; department
       <div className="p-5">
         {tab === 'work' && <WorkMasterManager brandId={brandId} departments={departments} />}
         {tab === 'dept' && <DepartmentManager brandId={brandId} />}
+        {tab === 'permission' && <UserPermissionManager />}
       </div>
     </div>
   );

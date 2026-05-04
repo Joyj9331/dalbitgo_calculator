@@ -26,6 +26,21 @@
 
 ---
 
+## 2026-04-30 새벽3 — Claude Code
+
+### 완료
+- 전체 리뷰 완료 (데스크탑/모바일 UI, 기능, 연동) — 치명 3, 중간 9, 개선 6개 이슈 식별
+- 배포 완료 (git push origin main → Vercel 자동 배포)
+
+### 다음에 수정할 것 (우선순위 순)
+1. 🔴 Tailwind 동적 클래스 퍼지 — `bg-${colorCode}-500` 형태 → 정적 맵으로 교체 (ScheduleTimeline, OpenChecklistView, DepartmentTaskView)
+2. 🔴 OpenChecklistView 훅 규칙 위반 — 조기 return 이전으로 useState/useToast 이동
+3. 🔴 computeWorkItemDates 중복 구현 — utils.ts 단일 소스 통일 (ScheduleTimeline, OpenChecklistView 아직 각자 구현)
+4. 🟡 팝오버 좌표 오계산 (fixed 요소에 scrollY 더하는 버그)
+5. 🟡 Gemini API 키 클라이언트 노출, 관리자 패스워드 평문 저장
+
+---
+
 ## 2026-04-30 새벽2 — Claude Code
 
 ### 완료

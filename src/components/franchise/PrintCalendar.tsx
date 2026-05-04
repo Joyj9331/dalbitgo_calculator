@@ -138,32 +138,40 @@ function MonthGrid({ year, month, schedules, workItems }: { year: number; month:
   const weeks = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
+  const colStyle = { display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' };
+
   return (
     <div style={{ breakInside: 'avoid' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', borderTop: '1px solid #ccc', borderLeft: '1px solid #ccc' }}>
+      {/* 요일 헤더 */}
+      <div style={{ ...colStyle, borderTop: '1px solid #ccc', borderLeft: '1px solid #ccc' }}>
         {['일','월','화','수','목','금','토'].map((d, i) => (
           <div key={d} style={{ padding: '4px 6px', fontSize: 10, fontWeight: 900, textAlign: 'center', borderRight: '1px solid #ccc', borderBottom: '1px solid #ccc', background: i === 0 ? '#fff5f5' : i === 6 ? '#f0f4ff' : '#fafafa', color: i === 0 ? '#dc2626' : i === 6 ? '#2563eb' : '#374151' }}>
             {d}
           </div>
         ))}
-        {weeks.map((week, wi) => week.map((cell, di) => {
-          const isToday = cell.fullDate === todayStr;
-          const isWeekend = di === 0 || di === 6;
-          const events = getEvents(cell.fullDate);
-          return (
-            <div key={cell.fullDate} style={{ borderRight: '1px solid #ccc', borderBottom: '1px solid #ccc', minHeight: 72, padding: '4px 4px 2px', background: isToday ? '#fef9c3' : !cell.isCurrentMonth ? '#f9f9f9' : isWeekend ? (di === 0 ? '#fff8f8' : '#f8f9ff') : '#fff' }}>
-              <div style={{ fontSize: 11, fontWeight: isToday ? 900 : 700, color: isToday ? '#d97706' : !cell.isCurrentMonth ? '#ccc' : di === 0 ? '#dc2626' : di === 6 ? '#2563eb' : '#111', marginBottom: 2 }}>
-                {cell.day}
-              </div>
-              {events.map((ev, ei) => (
-                <div key={ei} style={{ fontSize: 9, fontWeight: 700, color: '#fff', background: ev.color, borderRadius: 2, padding: '1px 3px', marginBottom: 1, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                  {ev.name}
-                </div>
-              ))}
-            </div>
-          );
-        }))}
       </div>
+      {/* 주(週) 행 — 각 행을 독립적으로 break-inside: avoid */}
+      {weeks.map((week, wi) => (
+        <div key={wi} style={{ ...colStyle, borderLeft: '1px solid #ccc', breakInside: 'avoid', pageBreakInside: 'avoid' }}>
+          {week.map((cell, di) => {
+            const isToday = cell.fullDate === todayStr;
+            const isWeekend = di === 0 || di === 6;
+            const events = getEvents(cell.fullDate);
+            return (
+              <div key={cell.fullDate} style={{ borderRight: '1px solid #ccc', borderBottom: '1px solid #ccc', minHeight: 80, padding: '4px 4px 2px', background: isToday ? '#fef9c3' : !cell.isCurrentMonth ? '#f9f9f9' : isWeekend ? (di === 0 ? '#fff8f8' : '#f8f9ff') : '#fff' }}>
+                <div style={{ fontSize: 11, fontWeight: isToday ? 900 : 700, color: isToday ? '#d97706' : !cell.isCurrentMonth ? '#ccc' : di === 0 ? '#dc2626' : di === 6 ? '#2563eb' : '#111', marginBottom: 2 }}>
+                  {cell.day}
+                </div>
+                {events.map((ev, ei) => (
+                  <div key={ei} style={{ fontSize: 9, fontWeight: 700, color: '#fff', background: ev.color, borderRadius: 2, padding: '1px 3px', marginBottom: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {ev.name}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
@@ -177,11 +185,11 @@ export function PrintCalendar({ schedules, months, workItems, paperSize, onClose
     const w = window.open('', '_blank', 'width=1200,height=900');
     if (!w) return;
     w.document.write(`<!DOCTYPE html><html><head><title>캘린더 인쇄</title><style>
-      @page { size: ${paperSize} landscape; margin: 10mm; }
-      body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; margin: 0; }
+      @page { size: ${paperSize} landscape; margin: 8mm; }
+      body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       * { box-sizing: border-box; }
-      .month-section { page-break-inside: avoid; margin-bottom: 24px; }
-      .month-title { font-size: 16px; font-weight: 900; margin-bottom: 8px; color: #111; padding-bottom: 4px; border-bottom: 2px solid #111; }
+      .month-section { page-break-inside: avoid; break-inside: avoid; margin-bottom: 20px; }
+      .month-title { font-size: 15px; font-weight: 900; margin-bottom: 6px; color: #111; padding-bottom: 4px; border-bottom: 2px solid #111; }
     </style></head><body>${content.innerHTML}</body></html>`);
     w.document.close();
     w.focus();

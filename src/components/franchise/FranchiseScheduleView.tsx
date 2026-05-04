@@ -25,6 +25,7 @@ import {
 interface Props {
   brandId: BrandId;
   currentUser: User | null;
+  isReadOnly?: boolean;
 }
 
 // 💡 Firestore 저장을 위한 재귀적 데이터 정제 유틸 (undefined 제거)
@@ -44,7 +45,7 @@ const scrubData = (obj: any): any => {
   return obj;
 };
 
-export function FranchiseScheduleView({ brandId, currentUser }: Props) {
+export function FranchiseScheduleView({ brandId, currentUser, isReadOnly = false }: Props) {
   const toast = useToast();
   const { confirm } = useConfirm();
 
@@ -117,7 +118,11 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
   const [pickerMonth, setPickerMonth] = useState(new Date());
 
   //  시스템 활동 로그 기록 센서
-  const logActivity = async (action: string, details: string) => {
+  const logActivity = async (
+    action: string,
+    details: string,
+    extra?: { storeName?: string; before?: string; after?: string; section?: string }
+  ) => {
     if (!auth.currentUser) return;
     try {
       await addDoc(collection(mainDb, 'activity_logs'), {
@@ -125,7 +130,9 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
         userName: auth.currentUser.displayName || auth.currentUser.email || '관리자',
         action,
         details,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        section: 'franchise',
+        ...(extra ?? {}),
       });
     } catch (e) { console.error('Failed to log activity', e); }
   };
@@ -284,12 +291,48 @@ export function FranchiseScheduleView({ brandId, currentUser }: Props) {
     try {
       if (data.id) {
         const { id, ...updates } = data;
+
+        // 변경 전/후 비교를 위해 기존 데이터 조회
+        const existing = schedules.find(s => s.id === id);
+        const DATE_FIELD_LABELS: Record<string, string> = {
+          constructionStart: '공사 시작일', constructionEnd: '공사 종료일',
+          openDate: '오픈일', equipmentIn: '기기 반입일', ovenIn: '오븐 반입일',
+          initialStockIn: '초도 발주일', trainingStart: '교육 시작일',
+          ownerGuideStart: '점주 교육일',
+        };
+        const changedFields: string[] = [];
+        let beforeSummary = '';
+        let afterSummary = '';
+        if (existing) {
+          for (const [key, label] of Object.entries(DATE_FIELD_LABELS)) {
+            const oldVal = (existing as any)[key];
+            const newVal = (updates as any)[key];
+            if (newVal !== undefined && oldVal !== newVal) {
+              changedFields.push(label);
+              beforeSummary = beforeSummary || `${label}: ${oldVal || '미설정'}`;
+              afterSummary = afterSummary || `${label}: ${newVal || '미설정'}`;
+            }
+          }
+          if (existing.storeName !== updates.storeName && updates.storeName) {
+            changedFields.push('매장명');
+            beforeSummary = `매장명: ${existing.storeName}`;
+            afterSummary = `매장명: ${updates.storeName}`;
+          }
+        }
+        const detailMsg = changedFields.length > 0
+          ? `[${updates.storeName || existing?.storeName || '매장'}] ${changedFields.join(', ')} 변경`
+          : `[${updates.storeName || '매장'}] 오픈 일정 변경`;
+
         await updateDoc(doc(db, 'franchise_schedules', id), {
           ...updates,
           updatedAt: new Date().toISOString()
         });
         toast.success('일정이 수정되었습니다.');
-        await logActivity('일정 수정', `[${updates.storeName || '매장'}] 오픈 일정 변경`);
+        await logActivity('일정 수정', detailMsg, {
+          storeName: updates.storeName || existing?.storeName,
+          before: beforeSummary || undefined,
+          after: afterSummary || undefined,
+        });
       } else {
         //  [신규] 매장 등록과 동시에 템플릿 업무를 자동 생성합니다.
         const docRef = await addDoc(collection(db, 'franchise_schedules'), {
@@ -1047,7 +1090,8 @@ ${transcript}`;
              </button>
            </div>
 
-           {/* 액션 버튼 */}
+           {/* 액션 버튼 — 열람 전용 모드에서 숨김 */}
+           {!isReadOnly && (
            <div className="flex items-center gap-2 shrink-0">
              <button onClick={() => setShowStoreReg(true)} className="flex items-center gap-1.5 px-3 py-2 bg-stone-900 text-white text-sm font-bold rounded-sm hover:bg-stone-800 transition-colors shadow-sm whitespace-nowrap">
                <Plus size={15} /> 신규 등록
@@ -1059,6 +1103,7 @@ ${transcript}`;
                <Settings size={15} /> 팀 설정
              </button>
            </div>
+           )}
          </div>
        </div>
 
@@ -1119,10 +1164,10 @@ ${transcript}`;
                    onOpenForm={(id) => { const s = schedules.find(x => x.id === id); if (s) { setEditingData(s); setShowForm(true); } }}
                    onTaskOffsetUpdate={handleTaskOffsetUpdate}
                    onScheduleUpdate={async (id, data, logDetails) => {
-                     setSchedules(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
-                     await updateDoc(doc(db, 'franchise_schedules', id), data);
                      const s = schedules.find(x => x.id === id);
-                     await logActivity('일정 변경', logDetails || `[${s?.storeName || '매장'}] 캘린더에서 일정 드래그 이동`);
+                     setSchedules(prev => prev.map(sc => sc.id === id ? { ...sc, ...data } : sc));
+                     await updateDoc(doc(db, 'franchise_schedules', id), data);
+                     await logActivity('일정 변경', logDetails || `[${s?.storeName || '매장'}] 캘린더에서 일정 드래그 이동`, { storeName: s?.storeName });
                    }}
                 />
                 {monthsView === 2 && (
@@ -1182,8 +1227,9 @@ ${transcript}`;
                                 )}
                               </div>
                             </button>
+                            {!isReadOnly && (
                             <div className="flex items-center gap-1 shrink-0 ml-2">
-                               <button 
+                               <button
                                  onClick={() => { updateDoc(doc(db, 'franchise_schedules', sch.id), { showInCalendar: sch.showInCalendar === false }); }}
                                  className={`p-1.5 rounded-sm transition-colors border ${sch.showInCalendar !== false ? 'text-blue-800 border-blue-200 bg-blue-50 hover:bg-blue-100' : 'text-stone-400 border-stone-200 hover:bg-stone-100'}`}
                                  title={sch.showInCalendar !== false ? '달력 노출 중' : '달력 숨김'}
@@ -1203,6 +1249,7 @@ ${transcript}`;
                                  <X size={15} />
                                </button>
                             </div>
+                            )}
                           </div>
                           
                           {/* Info Grid — schedule_date masterItems 기반 동적 렌더링 */}

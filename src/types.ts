@@ -10,7 +10,7 @@ export enum OperationType {
 }
 
 export type CostTabType = Region | '전체보기' | '메뉴 관리' | '변동사항';
-export type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing' | 'franchise';
+export type SidebarSection = 'cost' | 'sales' | 'database' | 'admin' | 'review' | 'home' | 'agents' | 'stores' | 'marketing' | 'franchise' | 'history';
 
 export interface SidebarState {
   brandId: BrandId | null;
@@ -40,6 +40,27 @@ export const DEFAULT_BRANDS: Brand[] = [
   { id: 'noeul', name: '노을에구운짚불쭈꾸미', order: 4, isActive: true, createdAt: new Date().toISOString() },
 ];
 
+export type SectionPermission = 'edit' | 'view' | 'none';
+
+// 섹션 키 목록 (사이드바와 동일)
+export const PERMISSION_SECTIONS = [
+  'home', 'cost', 'sales', 'database', 'franchise', 'stores', 'marketing', 'review', 'agents', 'admin'
+] as const;
+export type PermissionSection = typeof PERMISSION_SECTIONS[number];
+
+export const SECTION_LABELS: Record<PermissionSection, string> = {
+  home: '홈',
+  cost: '원가 계산',
+  sales: '매출 현황',
+  database: '데이터베이스',
+  franchise: '가맹 일정',
+  stores: '매장 관리',
+  marketing: '마케팅',
+  review: '가맹점 관제',
+  agents: '에이전트',
+  admin: '관리자 패널',
+};
+
 export interface User {
   uid: string;
   email: string;
@@ -52,7 +73,9 @@ export interface User {
   alertThresholdType?: 'percentage' | 'absolute';
   alertThresholdValue?: number;
   menuOrder?: string[];
-  departmentIds?: string[]; // 다중 부서 지원
+  departmentIds?: string[];
+  departmentHeadOf?: string[];                              // 부서장인 부서 ID 목록
+  sectionPermissions?: Partial<Record<PermissionSection, SectionPermission>>; // 섹션별 권한
 }
 
 export type CostCalcMethod = 'purchase_divide' | 'sales_divide' | 'manual';

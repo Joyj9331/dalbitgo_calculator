@@ -21,6 +21,7 @@ import { StoreManagement } from './components/StoreManagement';
 import { MarketingDashboard } from './components/marketing';
 import { SalesDashboard } from './components/sales/SalesDashboard';
 import { FranchiseScheduleView } from './components/franchise';
+import { ActivityLogView } from './components/ActivityLogView';
 import { useToast } from './components/Toast';
 import { useConfirm } from './components/ConfirmModal';
 import {
@@ -29,7 +30,7 @@ import {
   ChevronDown, LayoutDashboard, Database, Settings,
   BarChart2, Edit2, Check, Store, TrendingUp, ShieldAlert,
   ArrowRight, Bell, Menu as MenuIcon, TriangleAlert, Bot, CalendarDays, ArrowUpRight, Sparkles, LayoutList, Zap, Eye,
-  CheckSquare, FileText
+  CheckSquare, FileText, History
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { calculateTotalCost, formatPercent, doesMenuContainIngredient, checkMenuAlert } from './utils';
@@ -787,6 +788,11 @@ export default function App() {
   };
 
   const navigateTo = (brandId: BrandId | null, section: SidebarSection, costTab?: CostTabType, reviewTab?: string) => {
+    // 접근제한 섹션은 이동 자체를 차단 (홈 카드, 사이드바 모두 동일하게 적용)
+    if (currentUser && currentUser.role !== 'admin') {
+      const perm = (currentUser.sectionPermissions as any)?.[section] ?? 'edit';
+      if (perm === 'none') return;
+    }
     setSidebar({ brandId, section, costTab: costTab || '수도권', reviewTab });
     if (brandId && !expandedBrands.has(brandId)) {
       setExpandedBrands(prev => new Set([...prev, brandId]));
@@ -1090,14 +1096,20 @@ export default function App() {
   const currentBrand = brands.find(b => b.id === activeBrand);
   const costTabs: CostTabType[] = ['지방권', '광역권', '수도권', '전체보기', '메뉴 관리', '변동사항'];
 
-  // 브랜드별 사이드바 서브메뉴 — 사용자 정의 순서 반영
+  // 권한 체크 헬퍼 — admin은 항상 'edit', 일반 사용자는 sectionPermissions 우선, 기본값 'edit'
+  const getSectionPermission = (section: SidebarSection): 'edit' | 'view' | 'none' => {
+    if (!currentUser || currentUser.role === 'admin') return 'edit';
+    return (currentUser.sectionPermissions as any)?.[section] ?? 'edit';
+  };
+
+  // 브랜드별 사이드바 서브메뉴 — 사용자 정의 순서 반영, 접근제한 섹션 숨김
   const DEFAULT_SUB_MENUS = [
     { id: 'cost' as SidebarSection, label: '원가 계산기', icon: <LayoutDashboard size={14} /> },
     { id: 'sales' as SidebarSection, label: '매출 현황', icon: <BarChart2 size={14} /> },
     { id: 'review' as SidebarSection, label: '가맹점 관제', icon: <ShieldAlert size={14} /> },
     { id: 'franchise' as SidebarSection, label: '오픈 일정', icon: <CalendarDays size={14} /> },
     { id: 'marketing' as SidebarSection, label: '마케팅 봇', icon: <Bot size={14} /> },
-  ];
+  ].filter(m => getSectionPermission(m.id) !== 'none');
 
   const getBrandSubMenus = (_brandId: BrandId) => {
     const order = currentUser?.menuOrder;
@@ -1347,6 +1359,20 @@ export default function App() {
               <Bot size={15} />
               {(!sidebarCollapsed || isMobile) && '에이전트 팀'}
             </button>
+            {/* 변경 이력 — 관리자 또는 부서장에게만 표시 */}
+            {(currentUser.role === 'admin' || (currentUser.departmentHeadOf?.length ?? 0) > 0) && (
+              <button
+                onClick={() => navigateAndCloseMobile(null, 'history')}
+                className={`w-full flex items-center gap-2 px-2 py-2 rounded-none text-xs transition-colors ${
+                  sidebar.section === 'history'
+                    ? 'bg-stone-200 dark:bg-stone-800 text-stone-900 dark:text-stone-100 border-l-[3px] border-stone-800 dark:border-stone-400 font-bold pl-2'
+                    : 'text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-900 dark:hover:text-white border-l-[3px] border-transparent pl-2 font-medium'
+                }`}
+              >
+                <History size={14} />
+                {(!sidebarCollapsed || isMobile) && '변경 이력'}
+              </button>
+            )}
             {currentUser.role === 'admin' && (
               <button
                 onClick={() => navigateAndCloseMobile(null, 'admin')}
@@ -1389,6 +1415,23 @@ export default function App() {
       {/* 메인 콘텐츠 */}
       <main className={`flex-1 overflow-auto ${isMobile ? 'pt-14 pb-20' : ''} print:p-0 print:overflow-visible print:bg-white`}>
         <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+
+          {/* 접근제한 섹션 진입 차단 */}
+          {sidebar.section !== 'home' && sidebar.section !== 'admin' && getSectionPermission(sidebar.section) === 'none' && (
+            <div className="flex flex-col items-center justify-center py-32 text-center">
+              <ShieldAlert size={48} className="text-red-300 dark:text-red-700 mb-4" />
+              <h2 className="text-xl font-black text-slate-700 dark:text-slate-300 mb-2">접근이 제한된 섹션입니다</h2>
+              <p className="text-sm text-slate-400">관리자에게 권한을 요청하세요.</p>
+            </div>
+          )}
+
+          {/* 열람 전용 모드 배너 */}
+          {sidebar.section !== 'home' && sidebar.section !== 'admin' && getSectionPermission(sidebar.section) === 'view' && (
+            <div className="mb-4 flex items-center gap-2 px-4 py-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <Eye size={15} className="text-blue-500 shrink-0" />
+              <span className="text-sm font-bold text-blue-700 dark:text-blue-400">열람 전용 모드 — 이 섹션은 조회만 가능합니다.</span>
+            </div>
+          )}
 
           {/* 홈 (랜딩) */}
           {sidebar.section === 'home' && (
@@ -1441,6 +1484,11 @@ export default function App() {
             </>
           )}
 
+          {/* 변경 이력 */}
+          {sidebar.section === 'history' && (
+            <ActivityLogView currentUser={currentUser} />
+          )}
+
           {/* 에이전트 팀 */}
           {sidebar.section === 'agents' && <AgentsDashboard />}
 
@@ -1467,8 +1515,8 @@ export default function App() {
               )}
 
               {/* 오픈 일정 */}
-              {sidebar.section === 'franchise' && sidebar.brandId && (
-                <FranchiseScheduleView brandId={sidebar.brandId} currentUser={currentUser} />
+              {sidebar.section === 'franchise' && sidebar.brandId && getSectionPermission('franchise') !== 'none' && (
+                <FranchiseScheduleView brandId={sidebar.brandId} currentUser={currentUser} isReadOnly={getSectionPermission('franchise') === 'view'} />
               )}
 
               {/* 마케팅 봇 */}
@@ -1477,8 +1525,8 @@ export default function App() {
               )}
 
               {/* 매출 현황 */}
-              {sidebar.section === 'sales' && sidebar.brandId && (
-                <SalesDashboard activeBrand={sidebar.brandId} />
+              {sidebar.section === 'sales' && sidebar.brandId && getSectionPermission('sales') !== 'none' && (
+                <SalesDashboard activeBrand={sidebar.brandId} isReadOnly={getSectionPermission('sales') === 'view'} />
               )}
 
               {/* 원가 계산기 */}
