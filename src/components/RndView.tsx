@@ -7,7 +7,7 @@ import {
 } from 'firebase/firestore';
 import {
   RndItem, RndDailyLog, RndWeeklyReport, RndMonthlyPlan,
-  RndCategory, RndPriority, RndStatus, User,
+  RndCategory, RndPriority, RndStatus, RndProductType, User,
 } from '../types';
 import { useToast } from './Toast';
 import { useConfirm } from './ConfirmModal';
@@ -15,7 +15,7 @@ import { shareKakao } from '../utils/kakao';
 import {
   Plus, X, Edit2, Trash2, ChevronUp, ChevronDown,
   Printer, MessageCircle, FlaskConical, ClipboardList,
-  CalendarDays, CalendarRange, NotebookPen,
+  CalendarDays, CalendarRange, NotebookPen, Factory,
 } from 'lucide-react';
 
 // ── 기준정보 (엑셀 '기준정보' 시트 대체) ─────────────────────
@@ -30,6 +30,9 @@ const RND_STAGES = [
 const CATEGORIES: RndCategory[] = ['소스', '반찬', '양념/베이스', '기타'];
 const PRIORITIES: RndPriority[] = ['상', '중', '하'];
 const STATUSES: RndStatus[] = ['진행중', '보류', '완료', '중단'];
+const PRODUCT_TYPES: RndProductType[] = ['제조품', '일반상품'];
+// 구버전 데이터(productType 미지정)는 제조품 취급
+const productTypeOf = (item: RndItem): RndProductType => item.productType ?? '제조품';
 
 const stagePct = (stage: number) => RND_STAGES.find(s => s.stage === stage)?.pct ?? 0;
 const stageLabel = (stage: number) => {
@@ -47,6 +50,10 @@ const PRIORITY_BADGE: Record<RndPriority, string> = {
   '상': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
   '중': 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   '하': 'bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400',
+};
+const PRODUCT_TYPE_BADGE: Record<RndProductType, string> = {
+  '제조품':   'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+  '일반상품': 'bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400',
 };
 
 // ── 유틸 ──────────────────────────────────────────────────
@@ -122,6 +129,7 @@ function ItemFormModal({ item, onSave, onClose }: {
   item?: RndItem; onSave: (data: RndItemDraft) => void; onClose: () => void;
 }) {
   const [name, setName] = useState(item?.name ?? '');
+  const [productType, setProductType] = useState<RndProductType>(item ? productTypeOf(item) : '제조품');
   const [category, setCategory] = useState<RndCategory>(item?.category ?? '소스');
   const [assignee, setAssignee] = useState(item?.assignee ?? '');
   const [priority, setPriority] = useState<RndPriority>(item?.priority ?? '중');
@@ -134,7 +142,7 @@ function ItemFormModal({ item, onSave, onClose }: {
   const [note, setNote] = useState(item?.note ?? '');
 
   const save = () => name.trim() && onSave({
-    name: name.trim(), category, assignee: assignee.trim() || undefined, priority,
+    name: name.trim(), productType, category, assignee: assignee.trim() || undefined, priority,
     startDate: startDate || undefined, targetDate: targetDate || undefined,
     stage, status,
     thisWeekNote: thisWeekNote.trim() || undefined,
@@ -149,13 +157,21 @@ function ItemFormModal({ item, onSave, onClose }: {
         <label className={labelCls}>품목명 *</label>
         <input value={name} onChange={e => setName(e.target.value)} placeholder="예: 고등어 데리야끼 소스" autoFocus className={inputCls} />
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>구분 <span className="text-stone-400 font-normal">— 제조품은 완료 시 제조실 이관</span></label>
+          <select value={productType} onChange={e => setProductType(e.target.value as RndProductType)} className={inputCls}>
+            {PRODUCT_TYPES.map(t => <option key={t} value={t}>{t === '제조품' ? '제조품 (제조실 직접 제조)' : '일반상품 (업체 직거래 납품)'}</option>)}
+          </select>
+        </div>
         <div>
           <label className={labelCls}>카테고리</label>
           <select value={category} onChange={e => setCategory(e.target.value as RndCategory)} className={inputCls}>
             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>담당자</label>
           <input value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="이름" className={inputCls} />
@@ -380,6 +396,45 @@ function MonthlyModal({ plan, month, items, onSave, onClose }: {
   );
 }
 
+// ── 제조실 이관 모달 (제조품 + 완료 품목 전용) ──────────────
+function SendToFactoryModal({ item, onSave, onClose }: {
+  item: RndItem;
+  onSave: (data: { unit: string; safetyDays: number; estimatedMonthlyUsage?: number }) => void;
+  onClose: () => void;
+}) {
+  const [unit, setUnit] = useState('kg');
+  const [safetyDays, setSafetyDays] = useState(10);
+  const [estimatedMonthlyUsage, setEstimatedMonthlyUsage] = useState('');
+
+  return (
+    <ModalShell title="제조실 품목으로 등록" onClose={onClose}
+      footer={<FooterButtons onClose={onClose}
+        onSave={() => onSave({ unit, safetyDays, estimatedMonthlyUsage: estimatedMonthlyUsage ? Number(estimatedMonthlyUsage) : undefined })}
+        disabled={false} saveLabel="제조실 등록" />}>
+      <p className="text-xs text-stone-500 dark:text-stone-400">
+        <span className="font-bold text-stone-900 dark:text-white">"{item.name}"</span> 을(를) 제조실 재고·생산 관리 품목으로 등록합니다.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>단위 *</label>
+          <select value={unit} onChange={e => setUnit(e.target.value)} className={inputCls}>
+            {['kg', 'L', '개', '봉', '통'].map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelCls}>안전재고 일수</label>
+          <input type="number" min="1" max="30" value={safetyDays} onChange={e => setSafetyDays(Number(e.target.value))} className={inputCls} />
+        </div>
+      </div>
+      <div>
+        <label className={labelCls}>월 예상 소비량 ({unit}) <span className="text-stone-400 font-normal">— 실적 없을 때 기준값</span></label>
+        <input type="number" min="0" value={estimatedMonthlyUsage}
+          onChange={e => setEstimatedMonthlyUsage(e.target.value)} placeholder="예: 300" className={inputCls} />
+      </div>
+    </ModalShell>
+  );
+}
+
 // ── 메인 RndView ───────────────────────────────────────────
 type RndTab = 'board' | 'daily' | 'weekly' | 'monthly';
 
@@ -402,7 +457,9 @@ export function RndView({ currentUser }: { currentUser: User }) {
   const [editingWeekly, setEditingWeekly] = useState<RndWeeklyReport | null>(null);
   const [showMonthlyForm, setShowMonthlyForm] = useState(false);
   const [editingMonthly, setEditingMonthly] = useState<RndMonthlyPlan | null>(null);
+  const [sendingItem, setSendingItem] = useState<RndItem | null>(null);
 
+  const [statusFilter, setStatusFilter] = useState<RndStatus | 'all'>('진행중');
   const [dailyFilterItemId, setDailyFilterItemId] = useState('');
   const [month, setMonth] = useState(todayYMD().slice(0, 7));
 
@@ -461,15 +518,45 @@ export function RndView({ currentUser }: { currentUser: User }) {
     } catch { toast.error('삭제 실패'); }
   };
 
-  const handleMoveItem = async (idx: number, dir: 'up' | 'down') => {
-    const newItems = [...items];
-    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= newItems.length) return;
-    [newItems[idx], newItems[swapIdx]] = [newItems[swapIdx], newItems[idx]];
-    setItems(newItems);
+  // 필터 뷰 안에서 이웃 품목과 order 값을 맞바꿔 이동 (숨겨진 품목은 건너뜀)
+  const handleMoveItem = async (item: RndItem, dir: 'up' | 'down', visibleList: RndItem[]) => {
+    const vIdx = visibleList.findIndex(i => i.id === item.id);
+    const target = visibleList[vIdx + (dir === 'up' ? -1 : 1)];
+    if (!target) return;
+    setItems(prev => prev
+      .map(i => i.id === item.id ? { ...i, order: target.order } : i.id === target.id ? { ...i, order: item.order } : i)
+      .sort((a, b) => a.order - b.order));
     try {
-      await Promise.all(newItems.map((it, i) => updateDoc(doc(salesDb, 'rnd_items', it.id), { order: i, updatedAt: ts() })));
+      await Promise.all([
+        updateDoc(doc(salesDb, 'rnd_items', item.id), { order: target.order, updatedAt: ts() }),
+        updateDoc(doc(salesDb, 'rnd_items', target.id), { order: item.order, updatedAt: ts() }),
+      ]);
     } catch { toast.error('순서 변경 실패'); await loadAll(); }
+  };
+
+  // 완료된 제조품 → 제조실(factory_items) 이관
+  const handleSendToFactory = async (item: RndItem, data: { unit: string; safetyDays: number; estimatedMonthlyUsage?: number }) => {
+    try {
+      const snap = await getDocs(collection(salesDb, 'factory_items'));
+      const existing = snap.docs.map(d => d.data() as { name?: string; order?: number });
+      if (existing.some(f => f.name === item.name)) {
+        toast.error(`제조실에 같은 이름의 품목이 이미 있습니다: ${item.name}`);
+        return;
+      }
+      const maxOrder = existing.reduce((m, f) => Math.max(m, f.order ?? -1), -1);
+      const id = genId('fi');
+      await setDoc(doc(salesDb, 'factory_items', id), scrub({
+        id, name: item.name, unit: data.unit, safetyDays: data.safetyDays,
+        estimatedMonthlyUsage: data.estimatedMonthlyUsage,
+        order: maxOrder + 1, createdAt: ts(), updatedAt: ts(),
+      } as Record<string, unknown>));
+      await updateDoc(doc(salesDb, 'rnd_items', item.id), { factoryItemId: id, updatedAt: ts() });
+      toast.success(`"${item.name}" 제조실 품목으로 등록됨`);
+      setSendingItem(null);
+      await loadAll();
+    } catch (e: unknown) {
+      toast.error(`이관 실패: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   // 표에서 단계/상태 바로 변경
@@ -564,6 +651,10 @@ export function RndView({ currentUser }: { currentUser: User }) {
     const avgPct = total > 0 ? Math.round(items.reduce((s, i) => s + stagePct(i.stage), 0) / total) : 0;
     return { total, ongoing: count('진행중'), hold: count('보류'), done: count('완료'), avgPct };
   }, [items]);
+
+  const filteredItems = useMemo(
+    () => statusFilter === 'all' ? items : items.filter(i => i.status === statusFilter),
+    [items, statusFilter]);
 
   const filteredDaily = useMemo(
     () => dailyFilterItemId ? dailyLogs.filter(l => l.itemId === dailyFilterItemId) : dailyLogs,
@@ -720,29 +811,55 @@ export function RndView({ currentUser }: { currentUser: User }) {
             ))}
           </div>
 
+          {/* 상태 필터 칩 */}
+          <div className="flex items-center gap-1 mb-3 flex-wrap">
+            {([...STATUSES, 'all'] as (RndStatus | 'all')[]).map(s => {
+              const cnt = s === 'all' ? items.length : items.filter(i => i.status === s).length;
+              const active = statusFilter === s;
+              return (
+                <button key={s} onClick={() => setStatusFilter(s)}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-sm border transition-colors ${
+                    active
+                      ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 border-stone-900 dark:border-stone-100'
+                      : 'bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800'
+                  }`}>
+                  {s === 'all' ? '전체' : s} {cnt}
+                </button>
+              );
+            })}
+          </div>
+
           {items.length === 0 ? (
             <div className="text-center py-20 border border-dashed border-stone-300 dark:border-stone-700 rounded-sm">
               <FlaskConical size={28} className="mx-auto text-stone-300 mb-2" />
               <p className="text-sm text-stone-400">등록된 R&D 품목이 없습니다. '품목 등록'으로 시작하세요.</p>
             </div>
+          ) : filteredItems.length === 0 ? (
+            <div className="text-center py-12 border border-dashed border-stone-300 dark:border-stone-700 rounded-sm">
+              <p className="text-sm text-stone-400">'{statusFilter}' 상태의 품목이 없습니다.</p>
+            </div>
           ) : (
             <div className="overflow-x-auto border border-stone-200 dark:border-stone-700 rounded-sm bg-white dark:bg-stone-900">
-              <table className="w-full min-w-[1080px]">
+              <table className="w-full min-w-[1160px]">
                 <thead>
                   <tr className="bg-stone-50 dark:bg-stone-800/50">
-                    {['No', '품목명', '카테고리', '담당자', '우선순위', '시작일', '목표일', '현재 단계', 'D-Day', '진행률', '상태', '금주 진행 / 다음 액션', ''].map((h, i) => (
+                    {['No', '품목명', '구분', '카테고리', '담당자', '우선순위', '시작일', '목표일', '현재 단계', 'D-Day', '진행률', '상태', '금주 진행 / 다음 액션', ''].map((h, i) => (
                       <th key={i} className="px-2 py-2 text-left text-[10px] font-bold text-stone-400 border-b border-stone-200 dark:border-stone-700 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, idx) => {
+                  {filteredItems.map((item, idx) => {
                     const d = item.status !== '완료' ? dday(item.targetDate) : null;
                     const pct = stagePct(item.stage);
+                    const pType = productTypeOf(item);
                     return (
                       <tr key={item.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/30">
                         <td className={`${cellCls} text-stone-400`}>{idx + 1}</td>
                         <td className={`${cellCls} font-bold text-stone-900 dark:text-white whitespace-nowrap`}>{item.name}</td>
+                        <td className={cellCls}>
+                          <span className={`inline-block px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap ${PRODUCT_TYPE_BADGE[pType]}`}>{pType}</span>
+                        </td>
                         <td className={`${cellCls} whitespace-nowrap`}>{item.category}</td>
                         <td className={`${cellCls} whitespace-nowrap`}>{item.assignee ?? '-'}</td>
                         <td className={cellCls}>
@@ -780,8 +897,14 @@ export function RndView({ currentUser }: { currentUser: User }) {
                         </td>
                         <td className={`${cellCls} whitespace-nowrap`}>
                           <div className="flex items-center gap-0.5">
-                            <button onClick={() => handleMoveItem(idx, 'up')} className="p-1 text-stone-300 hover:text-stone-600"><ChevronUp size={12} /></button>
-                            <button onClick={() => handleMoveItem(idx, 'down')} className="p-1 text-stone-300 hover:text-stone-600"><ChevronDown size={12} /></button>
+                            {pType === '제조품' && item.status === '완료' && (
+                              item.factoryItemId
+                                ? <span title="제조실 등록됨" className="p-1 text-emerald-500"><Factory size={12} /></span>
+                                : <button onClick={() => setSendingItem(item)} title="제조실 품목으로 등록"
+                                    className="p-1 text-indigo-500 hover:text-indigo-700 dark:text-indigo-400"><Factory size={12} /></button>
+                            )}
+                            <button onClick={() => handleMoveItem(item, 'up', filteredItems)} className="p-1 text-stone-300 hover:text-stone-600"><ChevronUp size={12} /></button>
+                            <button onClick={() => handleMoveItem(item, 'down', filteredItems)} className="p-1 text-stone-300 hover:text-stone-600"><ChevronDown size={12} /></button>
                             <button onClick={() => { setEditingItem(item); setShowItemForm(true); }} className="p-1 text-stone-400 hover:text-stone-700"><Edit2 size={12} /></button>
                             <button onClick={() => handleDeleteItem(item)} className="p-1 text-stone-400 hover:text-red-500"><Trash2 size={12} /></button>
                           </div>
@@ -953,13 +1076,13 @@ export function RndView({ currentUser }: { currentUser: User }) {
         {tab === 'board' && (
           <table className="w-full table-fixed border-collapse text-[10px]">
             <colgroup>
-              <col className="w-6" /><col className="w-28" /><col className="w-14" /><col className="w-12" />
+              <col className="w-6" /><col className="w-28" /><col className="w-14" /><col className="w-14" /><col className="w-12" />
               <col className="w-10" /><col className="w-14" /><col className="w-14" /><col className="w-20" />
               <col className="w-12" /><col className="w-10" /><col className="w-10" /><col /><col />
             </colgroup>
             <thead>
               <tr>
-                {['No', '품목명', '카테고리', '담당자', '우선', '시작일', '목표일', '현재 단계', 'D-Day', '진행률', '상태', '금주 진행', '다음 액션'].map((h, i) => (
+                {['No', '품목명', '구분', '카테고리', '담당자', '우선', '시작일', '목표일', '현재 단계', 'D-Day', '진행률', '상태', '금주 진행', '다음 액션'].map((h, i) => (
                   <th key={i} className="border border-stone-400 px-1 py-1 text-left font-bold bg-stone-100">{h}</th>
                 ))}
               </tr>
@@ -971,6 +1094,7 @@ export function RndView({ currentUser }: { currentUser: User }) {
                   <tr key={item.id}>
                     <td className="border border-stone-400 px-1 py-1">{idx + 1}</td>
                     <td className="border border-stone-400 px-1 py-1 font-bold break-words">{item.name}</td>
+                    <td className="border border-stone-400 px-1 py-1">{productTypeOf(item)}</td>
                     <td className="border border-stone-400 px-1 py-1">{item.category}</td>
                     <td className="border border-stone-400 px-1 py-1">{item.assignee ?? ''}</td>
                     <td className="border border-stone-400 px-1 py-1">{item.priority}</td>
@@ -1087,6 +1211,11 @@ export function RndView({ currentUser }: { currentUser: User }) {
       {showMonthlyForm && (
         <MonthlyModal plan={editingMonthly ?? undefined} month={month} items={items} onSave={handleSaveMonthly}
           onClose={() => { setShowMonthlyForm(false); setEditingMonthly(null); }} />
+      )}
+      {sendingItem && (
+        <SendToFactoryModal item={sendingItem}
+          onSave={data => handleSendToFactory(sendingItem, data)}
+          onClose={() => setSendingItem(null)} />
       )}
     </div>
   );

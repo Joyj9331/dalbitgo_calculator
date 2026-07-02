@@ -943,11 +943,15 @@ export interface FactoryDailyRecord {
 export type RndCategory = '소스' | '반찬' | '양념/베이스' | '기타';
 export type RndPriority = '상' | '중' | '하';
 export type RndStatus = '진행중' | '보류' | '완료' | '중단';
+// 제조품 = 제조실 직접 제조 → 완료 시 제조실 품목으로 이관, 일반상품 = 외부 업체 직거래 납품
+export type RndProductType = '제조품' | '일반상품';
 
 export interface RndItem {
   id: string;
   name: string;
   category: RndCategory;
+  productType?: RndProductType;  // 미지정(구버전 데이터)은 제조품 취급
+  factoryItemId?: string;        // 완료 후 제조실(factory_items) 이관 시 연결 ID
   assignee?: string;
   priority: RndPriority;
   startDate?: string;        // YYYY-MM-DD

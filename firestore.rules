@@ -194,6 +194,12 @@ service cloud.firestore {
     match /factory_daily/{docId}       { allow read, write: if isAuthenticated(); }
     match /factory_settings/{docId}    { allow read, write: if isAuthenticated(); }
 
+    // R&D 관리대장
+    match /rnd_items/{docId}           { allow read, write: if isAuthenticated(); }
+    match /rnd_daily/{docId}           { allow read, write: if isAuthenticated(); }
+    match /rnd_weekly/{docId}          { allow read, write: if isAuthenticated(); }
+    match /rnd_monthly/{docId}         { allow read, write: if isAuthenticated(); }
+
     // 마케팅
     match /menu_sales/{docId}          { allow read, write: if isAuthenticated(); }
 
