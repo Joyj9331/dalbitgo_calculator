@@ -63,6 +63,17 @@
     print-color-adjust: exact;
   }
 
+  /* 오픈일정 체크리스트 인쇄 */
+  #checklist-print-area, #checklist-print-area * { visibility: visible; }
+  #checklist-print-area {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    overflow: visible;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
   /* R&D 관리대장 인쇄 */
   #rnd-print-area, #rnd-print-area * { visibility: visible; }
   #rnd-print-area {

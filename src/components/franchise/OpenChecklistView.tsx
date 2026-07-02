@@ -480,8 +480,8 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
         </div>
       </div>
 
-      {/* 오른쪽: 체크리스트 상세 패널 */}
-      <div className={`flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm print:border-none print:shadow-none print:w-full print:block ${!selectedStoreId ? 'hidden md:flex' : 'flex'}`}>
+      {/* 오른쪽: 체크리스트 상세 패널 — id는 index.css @media print 화이트리스트용 */}
+      <div id="checklist-print-area" className={`flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm print:border-none print:shadow-none print:w-full print:block ${!selectedStoreId ? 'hidden md:flex' : 'flex'}`}>
         {selectedStore ? (
           <>
             {/* 상세 화면 헤더 */}
