@@ -1,4 +1,6 @@
-// R&D 관리대장 — 소스·반찬 제조실 연구개발 통합 관리 (관리대장 / 일일 기록 / 주간 보고 / 월별 계획 + 인쇄)
+// R&D 관리대장 — 소스·반찬 제조실 연구개발 통합 관리
+// 구조: 관리대장(품목 클릭 → 상세: 공정 체크시트 상시 노출 + 일일기록 타임라인)
+//       주간보고 = 일일기록에서 자동 생성(보완 코멘트만 입력), 월별계획 = 주차별 실제 기록 수 연동
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { salesDb } from '../firebase';
 import {
@@ -13,9 +15,9 @@ import { useToast } from './Toast';
 import { useConfirm } from './ConfirmModal';
 import { shareKakao } from '../utils/kakao';
 import {
-  Plus, X, Edit2, Trash2, ChevronUp, ChevronDown,
+  Plus, X, Edit2, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   Printer, MessageCircle, FlaskConical, ClipboardList,
-  CalendarDays, CalendarRange, NotebookPen, Factory, CheckSquare,
+  CalendarDays, CalendarRange, NotebookPen, Factory, CheckSquare, ArrowLeft,
 } from 'lucide-react';
 
 // ── 기준정보: 실제 R&D 8단계 공정 (2026-07 제조실 공정 기준) ──
@@ -49,12 +51,21 @@ const stageLabel = (stage: number) => {
   const s = RND_STAGES.find(x => x.stage === stage);
   return s ? `${s.stage}. ${s.short}` : '-';
 };
-// 현재 단계의 체크시트 진행 (완료 수 / 전체 수)
+
+// ── 공정 체크시트 (품목별 항목 편집 가능) ───────────────────
+type ChecklistEntry = { stage: number; text: string; done: boolean };
+// checklist 없으면 공통 템플릿 + 구버전 stageChecks에서 마이그레이션
+const buildChecklist = (item: RndItem): ChecklistEntry[] =>
+  (item.checklist && item.checklist.length > 0)
+    ? item.checklist
+    : RND_STAGES.flatMap(s => s.subs.map((text, i) => ({
+        stage: s.stage, text, done: !!item.stageChecks?.[`${s.stage}-${i}`],
+      })));
+
+// 현재 단계의 체크 진행 (완료 수 / 전체 수)
 const stageCheckProgress = (item: RndItem): { done: number; total: number } => {
-  const s = RND_STAGES.find(x => x.stage === item.stage);
-  if (!s) return { done: 0, total: 0 };
-  const done = s.subs.filter((_, i) => item.stageChecks?.[`${s.stage}-${i}`]).length;
-  return { done, total: s.subs.length };
+  const entries = buildChecklist(item).filter(e => e.stage === item.stage);
+  return { done: entries.filter(e => e.done).length, total: entries.length };
 };
 
 const STATUS_BADGE: Record<RndStatus, string> = {
@@ -96,14 +107,19 @@ const dday = (target?: string): number | null => {
 };
 const fmtDday = (n: number) => (n === 0 ? 'D-Day' : n > 0 ? `D-${n}` : `D+${-n}`);
 
-// 이번 주 월~일
-const currentWeekRange = (): [string, string] => {
-  const d = new Date();
-  const day = (d.getDay() + 6) % 7; // 월=0
-  const mon = new Date(d); mon.setDate(d.getDate() - day);
-  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-  return [toYMD(mon), toYMD(sun)];
+// 해당 날짜가 속한 주의 월요일
+const mondayOf = (d: Date) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
 };
+const addDays = (ymd: string, n: number) => {
+  const d = new Date(ymd + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return toYMD(d);
+};
+// 월 내 주차 (1~5): 일자 기준 7일 단위
+const weekOfMonth = (ymd: string) => Math.min(5, Math.ceil(Number(ymd.slice(8, 10)) / 7));
 
 const inputCls = 'w-full px-3 py-2 text-sm border border-stone-200 dark:border-stone-600 rounded-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-stone-400';
 const labelCls = 'block text-[11px] font-bold text-stone-500 mb-1';
@@ -113,7 +129,7 @@ function ModalShell({ title, onClose, children, footer, wide }: {
   title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode; wide?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:hidden">
       <div className={`bg-white dark:bg-stone-900 rounded-sm shadow-2xl w-full ${wide ? 'max-w-lg' : 'max-w-sm'} border border-stone-200 dark:border-stone-700 flex flex-col max-h-[90vh]`}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b-[3px] border-double border-stone-800 dark:border-stone-400 shrink-0">
           <h2 className="text-sm font-black text-stone-900 dark:text-white">{title}</h2>
@@ -240,7 +256,7 @@ function ItemFormModal({ item, onSave, onClose }: {
   );
 }
 
-// ── 일일 기록 모달 ─────────────────────────────────────────
+// ── 일일 기록 모달 (수정 및 일일 탭 신규 작성용) ─────────────
 type RndDailyDraft = Omit<RndDailyLog, 'id' | 'author' | 'createdAt' | 'updatedAt'>;
 function DailyLogModal({ log, items, onSave, onClose }: {
   log?: RndDailyLog; items: RndItem[]; onSave: (data: RndDailyDraft) => void; onClose: () => void;
@@ -289,67 +305,6 @@ function DailyLogModal({ log, items, onSave, onClose }: {
   );
 }
 
-// ── 주간 보고 모달 ─────────────────────────────────────────
-type RndWeeklyDraft = Omit<RndWeeklyReport, 'id' | 'createdAt' | 'updatedAt'>;
-function WeeklyModal({ report, items, onSave, onClose }: {
-  report?: RndWeeklyReport; items: RndItem[]; onSave: (data: RndWeeklyDraft) => void; onClose: () => void;
-}) {
-  const [defStart, defEnd] = currentWeekRange();
-  const [periodStart, setPeriodStart] = useState(report?.periodStart ?? defStart);
-  const [periodEnd, setPeriodEnd] = useState(report?.periodEnd ?? defEnd);
-  const [itemId, setItemId] = useState(report?.itemId ?? (items[0]?.id ?? ''));
-  const [progressNote, setProgressNote] = useState(report?.progressNote ?? '');
-  const [issueRisk, setIssueRisk] = useState(report?.issueRisk ?? '');
-  const [nextWeekPlan, setNextWeekPlan] = useState(report?.nextWeekPlan ?? '');
-  const [supportRequest, setSupportRequest] = useState(report?.supportRequest ?? '');
-
-  const valid = !!itemId && !!progressNote.trim() && !!periodStart && !!periodEnd;
-  const save = () => valid && onSave({
-    periodStart, periodEnd, itemId, progressNote: progressNote.trim(),
-    issueRisk: issueRisk.trim() || undefined,
-    nextWeekPlan: nextWeekPlan.trim() || undefined,
-    supportRequest: supportRequest.trim() || undefined,
-  });
-
-  return (
-    <ModalShell title={report ? '주간 보고 수정' : '주간 보고 작성'} onClose={onClose} wide
-      footer={<FooterButtons onClose={onClose} onSave={save} disabled={!valid} saveLabel="저장" />}>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={labelCls}>기간 시작</label>
-          <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className={inputCls} />
-        </div>
-        <div>
-          <label className={labelCls}>기간 종료</label>
-          <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className={inputCls} />
-        </div>
-      </div>
-      <div>
-        <label className={labelCls}>품목 *</label>
-        <select value={itemId} onChange={e => setItemId(e.target.value)} className={inputCls}>
-          {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
-        </select>
-      </div>
-      <div>
-        <label className={labelCls}>금주 진행 사항 *</label>
-        <textarea value={progressNote} onChange={e => setProgressNote(e.target.value)} rows={3} autoFocus className={inputCls} />
-      </div>
-      <div>
-        <label className={labelCls}>이슈 / 리스크</label>
-        <textarea value={issueRisk} onChange={e => setIssueRisk(e.target.value)} rows={2} className={inputCls} />
-      </div>
-      <div>
-        <label className={labelCls}>차주 계획</label>
-        <textarea value={nextWeekPlan} onChange={e => setNextWeekPlan(e.target.value)} rows={2} className={inputCls} />
-      </div>
-      <div>
-        <label className={labelCls}>지원 요청 사항</label>
-        <input value={supportRequest} onChange={e => setSupportRequest(e.target.value)} className={inputCls} />
-      </div>
-    </ModalShell>
-  );
-}
-
 // ── 월별 계획 모달 ─────────────────────────────────────────
 type RndMonthlyDraft = Omit<RndMonthlyPlan, 'id' | 'order' | 'createdAt' | 'updatedAt'>;
 function MonthlyModal({ plan, month, items, onSave, onClose }: {
@@ -379,7 +334,7 @@ function MonthlyModal({ plan, month, items, onSave, onClose }: {
     <ModalShell title={plan ? '월별 계획 수정' : `${month} 월별 계획 추가`} onClose={onClose} wide
       footer={<FooterButtons onClose={onClose} onSave={save} disabled={!title.trim()} saveLabel="저장" />}>
       <div>
-        <label className={labelCls}>품목 / 과제 * <span className="text-stone-400 font-normal">— 관리대장 품목 외 자유 입력 가능</span></label>
+        <label className={labelCls}>품목 / 과제 * <span className="text-stone-400 font-normal">— 관리대장 품목명과 같으면 주차별 실적 자동 연동</span></label>
         <input value={title} onChange={e => setTitle(e.target.value)} list="rnd-item-names" autoFocus className={inputCls} />
         <datalist id="rnd-item-names">
           {items.map(i => <option key={i.id} value={i.name} />)}
@@ -409,64 +364,6 @@ function MonthlyModal({ plan, month, items, onSave, onClose }: {
         <label className={labelCls}>비고</label>
         <input value={note} onChange={e => setNote(e.target.value)} className={inputCls} />
       </div>
-    </ModalShell>
-  );
-}
-
-// ── 공정 체크시트 모달 (품목별 8단계 세부 항목 체크) ─────────
-function ChecklistModal({ item, onSave, onClose }: {
-  item: RndItem;
-  onSave: (checks: Record<string, boolean>, stage: number) => void;
-  onClose: () => void;
-}) {
-  const [checks, setChecks] = useState<Record<string, boolean>>(item.stageChecks ?? {});
-  const [stage, setStage] = useState(item.stage);
-  const toggle = (k: string) => setChecks(p => ({ ...p, [k]: !p[k] }));
-
-  return (
-    <ModalShell title="R&D 공정 체크시트" onClose={onClose} wide
-      footer={<FooterButtons onClose={onClose} onSave={() => onSave(checks, stage)} disabled={false} saveLabel="저장" />}>
-      <div className="flex items-center justify-between pb-2 border-b border-stone-200 dark:border-stone-700">
-        <p className="text-sm font-black text-stone-900 dark:text-white">
-          메뉴명: {item.name}
-          <span className="ml-3 font-bold text-stone-500 dark:text-stone-400 text-xs">담당자: {item.assignee ?? '-'}</span>
-        </p>
-      </div>
-      {RND_STAGES.map(s => {
-        const done = s.subs.filter((_, i) => checks[`${s.stage}-${i}`]).length;
-        const allDone = done === s.subs.length;
-        const isCurrent = s.stage === stage;
-        return (
-          <div key={s.stage} className={`border rounded-sm ${isCurrent ? 'border-stone-800 dark:border-stone-300' : 'border-stone-200 dark:border-stone-700'}`}>
-            <button onClick={() => setStage(s.stage)}
-              className={`w-full flex items-center justify-between px-3 py-2 text-left ${isCurrent ? 'bg-stone-100 dark:bg-stone-800' : 'hover:bg-stone-50 dark:hover:bg-stone-800/50'}`}
-              title="클릭하면 이 단계를 현재 단계로 설정">
-              <span className={`text-xs font-black ${allDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-900 dark:text-white'}`}>
-                {s.stage}. {s.label}
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-stone-400">{done}/{s.subs.length}</span>
-                {isCurrent && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-sm bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900">현재 단계</span>}
-              </span>
-            </button>
-            <div className="px-3 py-2 space-y-1.5 border-t border-stone-100 dark:border-stone-800">
-              {s.subs.map((sub, i) => {
-                const k = `${s.stage}-${i}`;
-                return (
-                  <label key={k} className="flex items-center gap-2 cursor-pointer group">
-                    <input type="checkbox" checked={!!checks[k]} onChange={() => toggle(k)}
-                      className="w-3.5 h-3.5 accent-stone-800 dark:accent-stone-200" />
-                    <span className={`text-xs ${checks[k] ? 'text-stone-400 line-through' : 'text-stone-700 dark:text-stone-300'} group-hover:text-stone-900 dark:group-hover:text-white`}>
-                      {sub}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-      <p className="text-[10px] text-stone-400">※ 단계 제목을 클릭하면 해당 단계가 '현재 단계'로 설정되고 진행률에 반영됩니다.</p>
     </ModalShell>
   );
 }
@@ -510,6 +407,87 @@ function SendToFactoryModal({ item, onSave, onClose }: {
   );
 }
 
+// ── 체크시트 항목 추가 입력 (편집 모드) ─────────────────────
+function StageAddInput({ onAdd }: { onAdd: (text: string) => void }) {
+  const [v, setV] = useState('');
+  const submit = () => { if (v.trim()) { onAdd(v.trim()); setV(''); } };
+  return (
+    <div className="flex items-center gap-1 mt-1">
+      <input value={v} onChange={e => setV(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+        placeholder="항목 추가 후 Enter"
+        className="flex-1 px-2 py-1 text-[11px] border border-dashed border-stone-300 dark:border-stone-600 rounded-sm bg-transparent text-stone-700 dark:text-stone-300 focus:outline-none focus:border-stone-500" />
+      <button onClick={submit} className="p-1 text-stone-400 hover:text-stone-700"><Plus size={11} /></button>
+    </div>
+  );
+}
+
+// ── 상세 화면 일일기록 빠른 입력 ────────────────────────────
+function QuickLogForm({ onAdd }: {
+  onAdd: (d: { date: string; workContent: string; resultIssue?: string; nextPlan?: string }) => void;
+}) {
+  const [date, setDate] = useState(todayYMD());
+  const [workContent, setWorkContent] = useState('');
+  const [resultIssue, setResultIssue] = useState('');
+  const [nextPlan, setNextPlan] = useState('');
+  const [expanded, setExpanded] = useState(false);
+
+  const submit = () => {
+    if (!workContent.trim()) return;
+    onAdd({
+      date, workContent: workContent.trim(),
+      resultIssue: resultIssue.trim() || undefined,
+      nextPlan: nextPlan.trim() || undefined,
+    });
+    setWorkContent(''); setResultIssue(''); setNextPlan(''); setExpanded(false);
+  };
+
+  const smallInput = 'w-full px-2 py-1.5 text-xs border border-stone-200 dark:border-stone-600 rounded-sm bg-white dark:bg-stone-800 text-stone-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-stone-400';
+
+  return (
+    <div className="p-3 border border-stone-200 dark:border-stone-700 rounded-sm bg-stone-50 dark:bg-stone-800/40 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          className="text-[11px] border border-stone-200 dark:border-stone-600 rounded-sm px-1.5 py-1 bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 focus:outline-none" />
+        <span className="text-[10px] text-stone-400">오늘 작업을 바로 기록하세요</span>
+      </div>
+      <textarea value={workContent} onChange={e => setWorkContent(e.target.value)}
+        onFocus={() => setExpanded(true)}
+        onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(); }}
+        placeholder="금일 작업 내용 (Ctrl+Enter 저장)" rows={expanded ? 2 : 1} className={smallInput} />
+      {expanded && (
+        <>
+          <input value={resultIssue} onChange={e => setResultIssue(e.target.value)} placeholder="결과 / 이슈 (선택)" className={smallInput} />
+          <div className="flex items-center gap-1.5">
+            <input value={nextPlan} onChange={e => setNextPlan(e.target.value)} placeholder="익일 계획 (선택)" className={smallInput} />
+            <button onClick={submit} disabled={!workContent.trim()}
+              className="shrink-0 px-3 py-1.5 text-xs font-bold bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-sm hover:bg-stone-700 disabled:opacity-40">
+              기록
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── 주간 보완 코멘트 인라인 입력 (blur 시 자동 저장) ─────────
+function WeeklyExtraInput({ label, value, onSave }: {
+  label: string; value: string; onSave: (v: string) => void;
+}) {
+  const [v, setV] = useState(value);
+  useEffect(() => { setV(value); }, [value]);
+  return (
+    <div className="flex-1 min-w-[140px]">
+      <label className="block text-[10px] font-bold text-stone-400 mb-0.5">{label}</label>
+      <textarea value={v} onChange={e => setV(e.target.value)}
+        onBlur={() => { if (v.trim() !== value.trim()) onSave(v); }}
+        rows={1} placeholder="입력하면 자동 저장"
+        className="w-full px-2 py-1 text-[11px] border border-stone-200 dark:border-stone-600 rounded-sm bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 focus:outline-none focus:ring-1 focus:ring-stone-400 resize-y" />
+    </div>
+  );
+}
+
 // ── 메인 RndView ───────────────────────────────────────────
 type RndTab = 'board' | 'daily' | 'weekly' | 'monthly';
 
@@ -523,21 +501,22 @@ export function RndView({ currentUser }: { currentUser: User }) {
   const [monthlyPlans, setMonthlyPlans] = useState<RndMonthlyPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<RndTab>('board');
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
   const [showItemForm, setShowItemForm] = useState(false);
   const [editingItem, setEditingItem] = useState<RndItem | null>(null);
   const [showDailyForm, setShowDailyForm] = useState(false);
   const [editingDaily, setEditingDaily] = useState<RndDailyLog | null>(null);
-  const [showWeeklyForm, setShowWeeklyForm] = useState(false);
-  const [editingWeekly, setEditingWeekly] = useState<RndWeeklyReport | null>(null);
   const [showMonthlyForm, setShowMonthlyForm] = useState(false);
   const [editingMonthly, setEditingMonthly] = useState<RndMonthlyPlan | null>(null);
   const [sendingItem, setSendingItem] = useState<RndItem | null>(null);
-  const [checklistItem, setChecklistItem] = useState<RndItem | null>(null);
+  const [checklistEditMode, setChecklistEditMode] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<RndStatus | 'all'>('진행중');
   const [dailyFilterItemId, setDailyFilterItemId] = useState('');
   const [month, setMonth] = useState(todayYMD().slice(0, 7));
+  const [weekStart, setWeekStart] = useState(toYMD(mondayOf(new Date())));
+  const weekEnd = addDays(weekStart, 6);
 
   // ── 로드 ───────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -562,6 +541,8 @@ export function RndView({ currentUser }: { currentUser: User }) {
   const itemName = useCallback(
     (id: string) => items.find(i => i.id === id)?.name ?? '(삭제된 품목)',
     [items]);
+
+  const selectedItem = selectedItemId ? (items.find(i => i.id === selectedItemId) ?? null) : null;
 
   // ── 품목 CRUD ──────────────────────────────────────────
   const handleSaveItem = async (data: RndItemDraft) => {
@@ -589,6 +570,7 @@ export function RndView({ currentUser }: { currentUser: User }) {
     if (!ok) return;
     try {
       await deleteDoc(doc(salesDb, 'rnd_items', item.id));
+      if (selectedItemId === item.id) setSelectedItemId(null);
       toast.success('삭제됨');
       await loadAll();
     } catch { toast.error('삭제 실패'); }
@@ -610,16 +592,117 @@ export function RndView({ currentUser }: { currentUser: User }) {
     } catch { toast.error('순서 변경 실패'); await loadAll(); }
   };
 
-  // 공정 체크시트 저장 (체크 상태 + 현재 단계)
-  const handleSaveChecks = async (item: RndItem, checks: Record<string, boolean>, stage: number) => {
+  // 표/상세에서 단계·상태 바로 변경
+  const handleInlineUpdate = async (item: RndItem, patch: Partial<Pick<RndItem, 'stage' | 'status'>>) => {
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
     try {
-      await updateDoc(doc(salesDb, 'rnd_items', item.id), { stageChecks: checks, stage, updatedAt: ts() });
-      toast.success('체크시트 저장됨');
-      setChecklistItem(null);
+      await updateDoc(doc(salesDb, 'rnd_items', item.id), { ...patch, updatedAt: ts() });
+    } catch { toast.error('저장 실패'); await loadAll(); }
+  };
+
+  // ── 공정 체크시트 (즉시 저장) ──────────────────────────
+  const saveChecklist = async (item: RndItem, checklist: ChecklistEntry[]) => {
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, checklist } : i));
+    try {
+      await updateDoc(doc(salesDb, 'rnd_items', item.id), { checklist, updatedAt: ts() });
+    } catch { toast.error('체크시트 저장 실패'); await loadAll(); }
+  };
+
+  const toggleCheck = (item: RndItem, index: number) =>
+    saveChecklist(item, buildChecklist(item).map((e, i) => i === index ? { ...e, done: !e.done } : e));
+
+  const addCheckSub = (item: RndItem, stage: number, text: string) => {
+    const cl = [...buildChecklist(item)];
+    let insertAt = cl.length;
+    cl.forEach((e, i) => { if (e.stage === stage) insertAt = i + 1; });
+    cl.splice(insertAt, 0, { stage, text, done: false });
+    saveChecklist(item, cl);
+  };
+
+  const deleteCheckSub = (item: RndItem, index: number) =>
+    saveChecklist(item, buildChecklist(item).filter((_, i) => i !== index));
+
+  // ── 일일 기록 ──────────────────────────────────────────
+  const handleSaveDaily = async (data: RndDailyDraft) => {
+    try {
+      if (editingDaily) {
+        await updateDoc(doc(salesDb, 'rnd_daily', editingDaily.id),
+          scrub({ ...data, updatedAt: ts() } as Record<string, unknown>));
+      } else {
+        const id = genId('rd');
+        await setDoc(doc(salesDb, 'rnd_daily', id),
+          scrub({ ...data, id, author: currentUser.name, createdAt: ts(), updatedAt: ts() } as Record<string, unknown>));
+      }
+      toast.success('저장됨');
+      setShowDailyForm(false); setEditingDaily(null);
       await loadAll();
     } catch (e: unknown) {
       toast.error(`저장 실패: ${e instanceof Error ? e.message : String(e)}`);
     }
+  };
+
+  // 상세 화면 빠른 기록 (품목 고정)
+  const handleAddLogInline = async (itemId: string, d: { date: string; workContent: string; resultIssue?: string; nextPlan?: string }) => {
+    try {
+      const id = genId('rd');
+      await setDoc(doc(salesDb, 'rnd_daily', id),
+        scrub({ ...d, id, itemId, author: currentUser.name, createdAt: ts(), updatedAt: ts() } as Record<string, unknown>));
+      toast.success('기록 저장됨');
+      await loadAll();
+    } catch (e: unknown) {
+      toast.error(`저장 실패: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const handleDeleteDaily = async (log: RndDailyLog) => {
+    const ok = await confirm({ title: '기록 삭제', message: `${log.date} 일일 기록을 삭제할까요?`, confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
+    try { await deleteDoc(doc(salesDb, 'rnd_daily', log.id)); toast.success('삭제됨'); await loadAll(); }
+    catch { toast.error('삭제 실패'); }
+  };
+
+  // ── 주간 보완 코멘트 (자동 주간보고에 덧붙이는 필드) ────
+  const handleSaveWeeklyExtra = async (item: RndItem, field: 'issueRisk' | 'nextWeekPlan' | 'supportRequest', value: string) => {
+    const id = `${item.id}_${weekStart}`;
+    const existing = weeklyReports.find(r => r.id === id);
+    try {
+      await setDoc(doc(salesDb, 'rnd_weekly', id), scrub({
+        id, itemId: item.id, periodStart: weekStart, periodEnd: weekEnd,
+        [field]: value.trim(),
+        createdAt: existing?.createdAt ?? ts(), updatedAt: ts(),
+      } as Record<string, unknown>), { merge: true });
+      setWeeklyReports(prev => existing
+        ? prev.map(r => r.id === id ? { ...r, [field]: value.trim() } : r)
+        : [...prev, { id, itemId: item.id, periodStart: weekStart, periodEnd: weekEnd, [field]: value.trim(), createdAt: ts(), updatedAt: ts() } as RndWeeklyReport]);
+      toast.success('저장됨');
+    } catch { toast.error('저장 실패'); }
+  };
+
+  // ── 월별 계획 ──────────────────────────────────────────
+  const handleSaveMonthly = async (data: RndMonthlyDraft) => {
+    try {
+      if (editingMonthly) {
+        await updateDoc(doc(salesDb, 'rnd_monthly', editingMonthly.id),
+          scrub({ ...data, updatedAt: ts() } as Record<string, unknown>));
+      } else {
+        const maxOrder = monthlyPlans.reduce((m, p) => Math.max(m, p.order), -1);
+        const id = genId('rm');
+        await setDoc(doc(salesDb, 'rnd_monthly', id),
+          scrub({ ...data, id, order: maxOrder + 1, createdAt: ts(), updatedAt: ts() } as Record<string, unknown>));
+      }
+      toast.success('저장됨');
+      setShowMonthlyForm(false); setEditingMonthly(null);
+      await loadAll();
+    } catch (e: unknown) {
+      toast.error(`저장 실패: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const handleDeleteMonthly = async (p: RndMonthlyPlan) => {
+    const ok = await confirm({ title: '계획 삭제', message: `"${p.title}" 월별 계획을 삭제할까요?`, confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
+    try { await deleteDoc(doc(salesDb, 'rnd_monthly', p.id)); toast.success('삭제됨'); await loadAll(); }
+    catch { toast.error('삭제 실패'); }
   };
 
   // 완료된 제조품 → 제조실(factory_items) 이관
@@ -647,91 +730,6 @@ export function RndView({ currentUser }: { currentUser: User }) {
     }
   };
 
-  // 표에서 단계/상태 바로 변경
-  const handleInlineUpdate = async (item: RndItem, patch: Partial<Pick<RndItem, 'stage' | 'status'>>) => {
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...patch } : i));
-    try {
-      await updateDoc(doc(salesDb, 'rnd_items', item.id), { ...patch, updatedAt: ts() });
-    } catch { toast.error('저장 실패'); await loadAll(); }
-  };
-
-  // ── 일일/주간/월별 CRUD ────────────────────────────────
-  const handleSaveDaily = async (data: RndDailyDraft) => {
-    try {
-      if (editingDaily) {
-        await updateDoc(doc(salesDb, 'rnd_daily', editingDaily.id),
-          scrub({ ...data, updatedAt: ts() } as Record<string, unknown>));
-      } else {
-        const id = genId('rd');
-        await setDoc(doc(salesDb, 'rnd_daily', id),
-          scrub({ ...data, id, author: currentUser.name, createdAt: ts(), updatedAt: ts() } as Record<string, unknown>));
-      }
-      toast.success('저장됨');
-      setShowDailyForm(false); setEditingDaily(null);
-      await loadAll();
-    } catch (e: unknown) {
-      toast.error(`저장 실패: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
-  const handleDeleteDaily = async (log: RndDailyLog) => {
-    const ok = await confirm({ title: '기록 삭제', message: `${log.date} 일일 기록을 삭제할까요?`, confirmLabel: '삭제', variant: 'danger' });
-    if (!ok) return;
-    try { await deleteDoc(doc(salesDb, 'rnd_daily', log.id)); toast.success('삭제됨'); await loadAll(); }
-    catch { toast.error('삭제 실패'); }
-  };
-
-  const handleSaveWeekly = async (data: RndWeeklyDraft) => {
-    try {
-      if (editingWeekly) {
-        await updateDoc(doc(salesDb, 'rnd_weekly', editingWeekly.id),
-          scrub({ ...data, updatedAt: ts() } as Record<string, unknown>));
-      } else {
-        const id = genId('rw');
-        await setDoc(doc(salesDb, 'rnd_weekly', id),
-          scrub({ ...data, id, createdAt: ts(), updatedAt: ts() } as Record<string, unknown>));
-      }
-      toast.success('저장됨');
-      setShowWeeklyForm(false); setEditingWeekly(null);
-      await loadAll();
-    } catch (e: unknown) {
-      toast.error(`저장 실패: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
-  const handleDeleteWeekly = async (r: RndWeeklyReport) => {
-    const ok = await confirm({ title: '주간 보고 삭제', message: `"${itemName(r.itemId)}" 주간 보고를 삭제할까요?`, confirmLabel: '삭제', variant: 'danger' });
-    if (!ok) return;
-    try { await deleteDoc(doc(salesDb, 'rnd_weekly', r.id)); toast.success('삭제됨'); await loadAll(); }
-    catch { toast.error('삭제 실패'); }
-  };
-
-  const handleSaveMonthly = async (data: RndMonthlyDraft) => {
-    try {
-      if (editingMonthly) {
-        await updateDoc(doc(salesDb, 'rnd_monthly', editingMonthly.id),
-          scrub({ ...data, updatedAt: ts() } as Record<string, unknown>));
-      } else {
-        const maxOrder = monthlyPlans.reduce((m, p) => Math.max(m, p.order), -1);
-        const id = genId('rm');
-        await setDoc(doc(salesDb, 'rnd_monthly', id),
-          scrub({ ...data, id, order: maxOrder + 1, createdAt: ts(), updatedAt: ts() } as Record<string, unknown>));
-      }
-      toast.success('저장됨');
-      setShowMonthlyForm(false); setEditingMonthly(null);
-      await loadAll();
-    } catch (e: unknown) {
-      toast.error(`저장 실패: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
-  const handleDeleteMonthly = async (p: RndMonthlyPlan) => {
-    const ok = await confirm({ title: '계획 삭제', message: `"${p.title}" 월별 계획을 삭제할까요?`, confirmLabel: '삭제', variant: 'danger' });
-    if (!ok) return;
-    try { await deleteDoc(doc(salesDb, 'rnd_monthly', p.id)); toast.success('삭제됨'); await loadAll(); }
-    catch { toast.error('삭제 실패'); }
-  };
-
   // ── 집계 ───────────────────────────────────────────────
   const summary = useMemo(() => {
     const total = items.length;
@@ -757,19 +755,33 @@ export function RndView({ currentUser }: { currentUser: User }) {
     return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   }, [filteredDaily]);
 
-  const weeklyGroups = useMemo(() => {
-    const map = new Map<string, RndWeeklyReport[]>();
-    weeklyReports.forEach(r => {
-      const key = `${r.periodStart}|${r.periodEnd}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(r);
-    });
-    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-  }, [weeklyReports]);
+  // 주간보고 자동 생성: 해당 주 일일기록 + 보완 코멘트
+  const weeklyData = useMemo(() => items
+    .map(item => ({
+      item,
+      logs: dailyLogs
+        .filter(l => l.itemId === item.id && l.date >= weekStart && l.date <= weekEnd)
+        .sort((a, b) => a.date.localeCompare(b.date)),
+      extra: weeklyReports.find(r => r.itemId === item.id && r.periodStart === weekStart),
+    }))
+    .filter(x => x.logs.length > 0 || x.item.status === '진행중'),
+  [items, dailyLogs, weeklyReports, weekStart, weekEnd]);
 
   const monthPlans = useMemo(
     () => monthlyPlans.filter(p => p.month === month),
     [monthlyPlans, month]);
+
+  // 월별계획 주차 실적: 품목명 일치 시 해당 월·주차 일일기록 수
+  const monthWeekLogCount = useCallback((title: string, w: number) => {
+    const it = items.find(i => i.name === title);
+    if (!it) return 0;
+    return dailyLogs.filter(l => l.itemId === it.id && l.date.startsWith(month) && weekOfMonth(l.date) === w).length;
+  }, [items, dailyLogs, month]);
+
+  // 상세 화면용: 선택 품목의 일일기록
+  const selectedItemLogs = useMemo(
+    () => selectedItem ? dailyLogs.filter(l => l.itemId === selectedItem.id) : [],
+    [dailyLogs, selectedItem]);
 
   // ── 카톡 공유 ──────────────────────────────────────────
   const shareBoard = () => {
@@ -786,17 +798,18 @@ export function RndView({ currentUser }: { currentUser: User }) {
     });
   };
 
-  const shareWeekly = (key: string, reports: RndWeeklyReport[]) => {
-    const [ps, pe] = key.split('|');
-    const blocks = reports.map(r => {
-      const lines = [`■ ${itemName(r.itemId)}`, `- 진행: ${r.progressNote}`];
-      if (r.issueRisk) lines.push(`- 이슈: ${r.issueRisk}`);
-      if (r.nextWeekPlan) lines.push(`- 차주: ${r.nextWeekPlan}`);
-      if (r.supportRequest) lines.push(`- 요청: ${r.supportRequest}`);
+  const shareWeeklyAuto = () => {
+    const blocks = weeklyData.map(({ item, logs, extra }) => {
+      const lines = [`■ ${item.name} — ${stageLabel(item.stage)} ${stagePct(item.stage)}%`];
+      if (logs.length === 0) lines.push('- 금주 기록 없음');
+      logs.forEach(l => lines.push(`- ${fmtDateShort(l.date)}: ${l.workContent}${l.resultIssue ? ` (이슈: ${l.resultIssue})` : ''}`));
+      if (extra?.issueRisk) lines.push(`- 이슈/리스크: ${extra.issueRisk}`);
+      if (extra?.nextWeekPlan) lines.push(`- 차주 계획: ${extra.nextWeekPlan}`);
+      if (extra?.supportRequest) lines.push(`- 지원 요청: ${extra.supportRequest}`);
       return lines.join('\n');
     });
     shareKakao({
-      title: `R&D 주간보고 (${fmtDateShort(ps)}~${fmtDateShort(pe)})`,
+      title: `R&D 주간보고 (${fmtDateShort(weekStart)}~${fmtDateShort(weekEnd)})`,
       body: blocks.join('\n\n'),
       onSuccess: msg => toast.success(msg), onError: msg => toast.error(msg),
     });
@@ -817,6 +830,7 @@ export function RndView({ currentUser }: { currentUser: User }) {
   ];
 
   const cellCls = 'px-2 py-2 border-b border-stone-100 dark:border-stone-800 text-xs text-stone-700 dark:text-stone-300';
+  const printCell = 'border border-stone-400 px-1 py-1 align-top';
 
   return (
     <div>
@@ -826,11 +840,19 @@ export function RndView({ currentUser }: { currentUser: User }) {
           <h1 className="text-xl font-black text-stone-900 dark:text-white flex items-center gap-2">
             <FlaskConical size={18} /> R&D 관리대장
           </h1>
-          <p className="text-sm text-stone-500 dark:text-stone-400 mt-0.5">소스·반찬 제조실 연구개발 — 관리대장 · 일일 · 주간 · 월별</p>
+          <p className="text-sm text-stone-500 dark:text-stone-400 mt-0.5">
+            소스·반찬 제조실 연구개발 — 품목을 클릭하면 공정 체크시트와 기록이 함께 열립니다
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          {tab === 'board' && (
+          {tab === 'board' && !selectedItem && (
             <button onClick={shareBoard} disabled={items.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2 border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 text-xs font-bold rounded-sm hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors disabled:opacity-40">
+              <MessageCircle size={12} /> 카톡 복사
+            </button>
+          )}
+          {tab === 'weekly' && (
+            <button onClick={shareWeeklyAuto} disabled={weeklyData.length === 0}
               className="flex items-center gap-1.5 px-3 py-2 border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 text-xs font-bold rounded-sm hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors disabled:opacity-40">
               <MessageCircle size={12} /> 카톡 복사
             </button>
@@ -839,7 +861,7 @@ export function RndView({ currentUser }: { currentUser: User }) {
             className="flex items-center gap-1.5 px-3 py-2 border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-400 text-xs font-bold rounded-sm hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors">
             <Printer size={12} /> 인쇄
           </button>
-          {tab === 'board' && (
+          {tab === 'board' && !selectedItem && (
             <button onClick={() => { setEditingItem(null); setShowItemForm(true); }}
               className="flex items-center gap-1.5 px-3 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-bold rounded-sm hover:bg-stone-700 transition-colors">
               <Plus size={12} /> 품목 등록
@@ -849,12 +871,6 @@ export function RndView({ currentUser }: { currentUser: User }) {
             <button onClick={() => { setEditingDaily(null); setShowDailyForm(true); }} disabled={items.length === 0}
               className="flex items-center gap-1.5 px-3 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-bold rounded-sm hover:bg-stone-700 transition-colors disabled:opacity-40">
               <Plus size={12} /> 기록 추가
-            </button>
-          )}
-          {tab === 'weekly' && (
-            <button onClick={() => { setEditingWeekly(null); setShowWeeklyForm(true); }} disabled={items.length === 0}
-              className="flex items-center gap-1.5 px-3 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-bold rounded-sm hover:bg-stone-700 transition-colors disabled:opacity-40">
-              <Plus size={12} /> 주간 보고 작성
             </button>
           )}
           {tab === 'monthly' && (
@@ -869,7 +885,7 @@ export function RndView({ currentUser }: { currentUser: User }) {
       {/* 탭 */}
       <div className="flex items-center gap-1 border-b border-stone-200 dark:border-stone-700 mb-4">
         {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
+          <button key={t.id} onClick={() => { setTab(t.id); if (t.id !== 'board') setSelectedItemId(null); }}
             className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 -mb-px transition-colors ${
               tab === t.id
                 ? 'border-stone-800 dark:border-stone-300 text-stone-900 dark:text-white'
@@ -880,8 +896,152 @@ export function RndView({ currentUser }: { currentUser: User }) {
         ))}
       </div>
 
-      {/* ── 탭 1: 관리대장 ── */}
-      {tab === 'board' && (
+      {/* ── 탭 1: 관리대장 (목록 ↔ 품목 상세) ── */}
+      {tab === 'board' && selectedItem && (
+        <div>
+          {/* 상세 헤더 */}
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <button onClick={() => setSelectedItemId(null)}
+                className="p-1.5 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 border border-stone-200 dark:border-stone-700 rounded-sm shrink-0">
+                <ArrowLeft size={14} />
+              </button>
+              <h2 className="text-lg font-black text-stone-900 dark:text-white truncate">{selectedItem.name}</h2>
+              <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-bold shrink-0 ${PRODUCT_TYPE_BADGE[productTypeOf(selectedItem)]}`}>{productTypeOf(selectedItem)}</span>
+              <span className="text-xs text-stone-400 shrink-0">{selectedItem.category} · 담당 {selectedItem.assignee ?? '-'}</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {(() => {
+                const d = selectedItem.status !== '완료' ? dday(selectedItem.targetDate) : null;
+                return d != null && (
+                  <span className={`text-xs font-black ${d < 0 ? 'text-red-500' : d <= 7 ? 'text-amber-600 dark:text-amber-400' : 'text-stone-500'}`}>
+                    {fmtDday(d)} <span className="font-bold text-stone-400">({selectedItem.targetDate})</span>
+                  </span>
+                );
+              })()}
+              <select value={selectedItem.stage} onChange={e => handleInlineUpdate(selectedItem, { stage: Number(e.target.value) })}
+                className="text-xs border border-stone-200 dark:border-stone-600 rounded-sm px-1.5 py-1.5 bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 focus:outline-none">
+                {RND_STAGES.map(s => <option key={s.stage} value={s.stage}>{s.stage}. {s.short} ({s.pct}%)</option>)}
+              </select>
+              <select value={selectedItem.status} onChange={e => handleInlineUpdate(selectedItem, { status: e.target.value as RndStatus })}
+                className={`text-[11px] font-bold rounded-sm px-1.5 py-1.5 border-0 focus:outline-none ${STATUS_BADGE[selectedItem.status]}`}>
+                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <div className="flex items-center gap-1.5">
+                <div className="w-20 h-1.5 bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-stone-700 dark:bg-stone-300 rounded-full" style={{ width: `${stagePct(selectedItem.stage)}%` }} />
+                </div>
+                <span className="text-[11px] font-black text-stone-600 dark:text-stone-300">{stagePct(selectedItem.stage)}%</span>
+              </div>
+              {productTypeOf(selectedItem) === '제조품' && selectedItem.status === '완료' && !selectedItem.factoryItemId && (
+                <button onClick={() => setSendingItem(selectedItem)}
+                  className="flex items-center gap-1 px-2 py-1.5 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-sm hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+                  <Factory size={11} /> 제조실 등록
+                </button>
+              )}
+              {selectedItem.factoryItemId && (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400"><Factory size={11} /> 제조실 등록됨</span>
+              )}
+              <button onClick={() => { setEditingItem(selectedItem); setShowItemForm(true); }}
+                className="p-1.5 text-stone-400 hover:text-stone-700 border border-stone-200 dark:border-stone-700 rounded-sm"><Edit2 size={13} /></button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* 좌: 공정 체크시트 (상시 노출) */}
+            <div className="border border-stone-200 dark:border-stone-700 rounded-sm bg-white dark:bg-stone-900">
+              <div className="flex items-center justify-between px-3 py-2 border-b-[3px] border-double border-stone-800 dark:border-stone-400">
+                <h3 className="text-xs font-black text-stone-900 dark:text-white flex items-center gap-1.5"><CheckSquare size={13} /> 공정 체크시트</h3>
+                <button onClick={() => setChecklistEditMode(m => !m)}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-sm border transition-colors ${
+                    checklistEditMode
+                      ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 border-stone-900 dark:border-stone-100'
+                      : 'text-stone-500 border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800'
+                  }`}>
+                  {checklistEditMode ? '편집 완료' : '항목 편집'}
+                </button>
+              </div>
+              <div className="p-3 space-y-2">
+                {RND_STAGES.map(s => {
+                  const cl = buildChecklist(selectedItem);
+                  const entries = cl.map((e, i) => ({ ...e, idx: i })).filter(e => e.stage === s.stage);
+                  const done = entries.filter(e => e.done).length;
+                  const allDone = entries.length > 0 && done === entries.length;
+                  const isCurrent = s.stage === selectedItem.stage;
+                  return (
+                    <div key={s.stage} className={`border rounded-sm ${isCurrent ? 'border-stone-800 dark:border-stone-300' : 'border-stone-200 dark:border-stone-700'}`}>
+                      <button onClick={() => handleInlineUpdate(selectedItem, { stage: s.stage })}
+                        title="클릭하면 이 단계를 현재 단계로 설정"
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 text-left ${isCurrent ? 'bg-stone-100 dark:bg-stone-800' : 'hover:bg-stone-50 dark:hover:bg-stone-800/50'}`}>
+                        <span className={`text-[11px] font-black ${allDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-900 dark:text-white'}`}>
+                          {s.stage}. {s.label}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-stone-400">{done}/{entries.length}</span>
+                          {isCurrent && <span className="text-[9px] font-bold px-1 py-0.5 rounded-sm bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900">현재</span>}
+                        </span>
+                      </button>
+                      <div className="px-2.5 py-1.5 space-y-1 border-t border-stone-100 dark:border-stone-800">
+                        {entries.map(e => (
+                          <div key={e.idx} className="flex items-center gap-1.5 group">
+                            <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                              <input type="checkbox" checked={e.done} onChange={() => toggleCheck(selectedItem, e.idx)}
+                                className="w-3.5 h-3.5 accent-stone-800 dark:accent-stone-200 shrink-0" />
+                              <span className={`text-[11px] ${e.done ? 'text-stone-400 line-through' : 'text-stone-700 dark:text-stone-300'}`}>{e.text}</span>
+                            </label>
+                            {checklistEditMode && (
+                              <button onClick={() => deleteCheckSub(selectedItem, e.idx)}
+                                className="p-0.5 text-stone-300 hover:text-red-500 shrink-0"><X size={11} /></button>
+                            )}
+                          </div>
+                        ))}
+                        {checklistEditMode && <StageAddInput onAdd={text => addCheckSub(selectedItem, s.stage, text)} />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 우: 일일 기록 (빠른 입력 + 타임라인) */}
+            <div className="border border-stone-200 dark:border-stone-700 rounded-sm bg-white dark:bg-stone-900 flex flex-col">
+              <div className="px-3 py-2 border-b-[3px] border-double border-stone-800 dark:border-stone-400">
+                <h3 className="text-xs font-black text-stone-900 dark:text-white flex items-center gap-1.5">
+                  <NotebookPen size={13} /> 일일 기록 <span className="text-stone-400 font-bold">({selectedItemLogs.length}건)</span>
+                </h3>
+              </div>
+              <div className="p-3 space-y-2">
+                <QuickLogForm onAdd={d => handleAddLogInline(selectedItem.id, d)} />
+                {selectedItemLogs.length === 0 ? (
+                  <p className="text-xs text-stone-400 text-center py-6">아직 기록이 없습니다. 위에서 오늘 작업을 기록하세요.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-[600px] overflow-y-auto">
+                    {selectedItemLogs.map(log => (
+                      <div key={log.id} className="flex items-start gap-2.5 px-2.5 py-2 border border-stone-100 dark:border-stone-800 rounded-sm">
+                        <div className="shrink-0 w-16">
+                          <p className="text-[11px] font-black text-stone-800 dark:text-stone-200">{fmtDateShort(log.date)}</p>
+                          <p className="text-[9px] text-stone-400">{log.author}</p>
+                        </div>
+                        <div className="flex-1 min-w-0 text-[11px] text-stone-700 dark:text-stone-300 space-y-0.5">
+                          <p className="whitespace-pre-wrap">{log.workContent}</p>
+                          {log.resultIssue && <p className="text-amber-700 dark:text-amber-400 whitespace-pre-wrap">이슈: {log.resultIssue}</p>}
+                          {log.nextPlan && <p className="text-stone-400">익일: {log.nextPlan}</p>}
+                        </div>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button onClick={() => { setEditingDaily(log); setShowDailyForm(true); }} className="p-1 text-stone-400 hover:text-stone-700"><Edit2 size={11} /></button>
+                          <button onClick={() => handleDeleteDaily(log)} className="p-1 text-stone-400 hover:text-red-500"><Trash2 size={11} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'board' && !selectedItem && (
         <div>
           {/* 요약 카드 */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
@@ -941,10 +1101,16 @@ export function RndView({ currentUser }: { currentUser: User }) {
                     const d = item.status !== '완료' ? dday(item.targetDate) : null;
                     const pct = stagePct(item.stage);
                     const pType = productTypeOf(item);
+                    const { done, total } = stageCheckProgress(item);
                     return (
                       <tr key={item.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/30">
                         <td className={`${cellCls} text-stone-400`}>{idx + 1}</td>
-                        <td className={`${cellCls} font-bold text-stone-900 dark:text-white whitespace-nowrap`}>{item.name}</td>
+                        <td className={`${cellCls} whitespace-nowrap`}>
+                          <button onClick={() => setSelectedItemId(item.id)}
+                            className="font-bold text-stone-900 dark:text-white hover:underline text-left">
+                            {item.name}
+                          </button>
+                        </td>
                         <td className={cellCls}>
                           <span className={`inline-block px-1.5 py-0.5 rounded-sm text-[10px] font-bold whitespace-nowrap ${PRODUCT_TYPE_BADGE[pType]}`}>{pType}</span>
                         </td>
@@ -960,15 +1126,10 @@ export function RndView({ currentUser }: { currentUser: User }) {
                             className="text-xs border border-stone-200 dark:border-stone-600 rounded-sm px-1 py-1 bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 focus:outline-none">
                             {RND_STAGES.map(s => <option key={s.stage} value={s.stage}>{s.stage}. {s.short}</option>)}
                           </select>
-                          {(() => {
-                            const { done, total } = stageCheckProgress(item);
-                            return (
-                              <button onClick={() => setChecklistItem(item)}
-                                className={`block mt-0.5 text-[9px] font-bold hover:underline ${done === total && total > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-400'}`}>
-                                체크 {done}/{total}
-                              </button>
-                            );
-                          })()}
+                          <button onClick={() => setSelectedItemId(item.id)}
+                            className={`block mt-0.5 text-[9px] font-bold hover:underline ${done === total && total > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-400'}`}>
+                            체크 {done}/{total}
+                          </button>
                         </td>
                         <td className={`${cellCls} whitespace-nowrap font-bold ${d != null && d < 0 ? 'text-red-500' : d != null && d <= 7 ? 'text-amber-600 dark:text-amber-400' : ''}`}>
                           {d != null ? fmtDday(d) : '-'}
@@ -994,7 +1155,7 @@ export function RndView({ currentUser }: { currentUser: User }) {
                         </td>
                         <td className={`${cellCls} whitespace-nowrap`}>
                           <div className="flex items-center gap-0.5">
-                            <button onClick={() => setChecklistItem(item)} title="공정 체크시트"
+                            <button onClick={() => setSelectedItemId(item.id)} title="공정 체크시트 · 기록"
                               className="p-1 text-stone-400 hover:text-stone-700"><CheckSquare size={12} /></button>
                             {pType === '제조품' && item.status === '완료' && (
                               item.factoryItemId
@@ -1018,7 +1179,7 @@ export function RndView({ currentUser }: { currentUser: User }) {
         </div>
       )}
 
-      {/* ── 탭 2: 일일 기록 ── */}
+      {/* ── 탭 2: 일일 기록 (전체 타임라인) ── */}
       {tab === 'daily' && (
         <div>
           <div className="flex items-center gap-2 mb-3">
@@ -1027,12 +1188,12 @@ export function RndView({ currentUser }: { currentUser: User }) {
               <option value="">전체 품목</option>
               {items.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
             </select>
-            <span className="text-[11px] text-stone-400">{filteredDaily.length}건</span>
+            <span className="text-[11px] text-stone-400">{filteredDaily.length}건 — 품목 상세 화면에서도 바로 기록할 수 있습니다</span>
           </div>
           {dailyByDate.length === 0 ? (
             <div className="text-center py-20 border border-dashed border-stone-300 dark:border-stone-700 rounded-sm">
               <NotebookPen size={28} className="mx-auto text-stone-300 mb-2" />
-              <p className="text-sm text-stone-400">일일 기록이 없습니다. 매일 작업 내용을 품목별로 한 줄씩 남기세요.</p>
+              <p className="text-sm text-stone-400">일일 기록이 없습니다. 관리대장에서 품목을 클릭해 바로 기록하세요.</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -1045,7 +1206,10 @@ export function RndView({ currentUser }: { currentUser: User }) {
                     {logs.map(log => (
                       <div key={log.id} className="flex items-start gap-3 px-3 py-2.5 border border-stone-200 dark:border-stone-700 rounded-sm bg-white dark:bg-stone-900">
                         <div className="shrink-0 w-32">
-                          <p className="text-xs font-bold text-stone-900 dark:text-white truncate">{itemName(log.itemId)}</p>
+                          <button onClick={() => { setTab('board'); setSelectedItemId(log.itemId); }}
+                            className="text-xs font-bold text-stone-900 dark:text-white truncate hover:underline text-left block max-w-full">
+                            {itemName(log.itemId)}
+                          </button>
                           <p className="text-[10px] text-stone-400">{log.author}</p>
                         </div>
                         <div className="flex-1 min-w-0 text-xs text-stone-700 dark:text-stone-300 space-y-0.5">
@@ -1067,61 +1231,80 @@ export function RndView({ currentUser }: { currentUser: User }) {
         </div>
       )}
 
-      {/* ── 탭 3: 주간 보고 ── */}
+      {/* ── 탭 3: 주간 보고 (일일기록 자동 집계) ── */}
       {tab === 'weekly' && (
-        weeklyGroups.length === 0 ? (
-          <div className="text-center py-20 border border-dashed border-stone-300 dark:border-stone-700 rounded-sm">
-            <CalendarDays size={28} className="mx-auto text-stone-300 mb-2" />
-            <p className="text-sm text-stone-400">주간 보고가 없습니다. 주 1회 품목별 진행 사항을 정리하세요.</p>
+        <div>
+          {/* 주 이동 */}
+          <div className="flex items-center gap-2 mb-3">
+            <button onClick={() => setWeekStart(addDays(weekStart, -7))}
+              className="p-1.5 border border-stone-200 dark:border-stone-700 rounded-sm text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"><ChevronLeft size={13} /></button>
+            <span className="text-xs font-black text-stone-900 dark:text-white">{weekStart} ~ {weekEnd}</span>
+            <button onClick={() => setWeekStart(addDays(weekStart, 7))}
+              className="p-1.5 border border-stone-200 dark:border-stone-700 rounded-sm text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800"><ChevronRight size={13} /></button>
+            <button onClick={() => setWeekStart(toYMD(mondayOf(new Date())))}
+              className="px-2 py-1 text-[11px] font-bold text-stone-500 border border-stone-200 dark:border-stone-700 rounded-sm hover:bg-stone-100 dark:hover:bg-stone-800">이번 주</button>
+            <span className="text-[11px] text-stone-400 hidden sm:inline">일일기록에서 자동 생성 — 이슈·차주 계획만 보완 입력</span>
           </div>
-        ) : (
-          <div className="space-y-5">
-            {weeklyGroups.map(([key, reports]) => {
-              const [ps, pe] = key.split('|');
-              return (
-                <div key={key}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <p className="text-xs font-black text-stone-900 dark:text-white pb-1 border-b-[3px] border-double border-stone-800 dark:border-stone-400 pr-6">
-                      {ps} ~ {pe} <span className="text-stone-400 font-bold">({reports.length}건)</span>
-                    </p>
-                    <button onClick={() => shareWeekly(key, reports)}
-                      className="flex items-center gap-1 px-2 py-1 border border-stone-200 dark:border-stone-700 text-stone-500 dark:text-stone-400 text-[10px] font-bold rounded-sm hover:bg-stone-100 dark:hover:bg-stone-800">
-                      <MessageCircle size={10} /> 카톡 복사
+
+          {weeklyData.length === 0 ? (
+            <div className="text-center py-20 border border-dashed border-stone-300 dark:border-stone-700 rounded-sm">
+              <CalendarDays size={28} className="mx-auto text-stone-300 mb-2" />
+              <p className="text-sm text-stone-400">이 주에 해당하는 진행중 품목이나 일일 기록이 없습니다.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {weeklyData.map(({ item, logs, extra }) => (
+                <div key={item.id} className="border border-stone-200 dark:border-stone-700 rounded-sm bg-white dark:bg-stone-900">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-stone-100 dark:border-stone-800 flex-wrap gap-1">
+                    <button onClick={() => { setTab('board'); setSelectedItemId(item.id); }}
+                      className="text-xs font-black text-stone-900 dark:text-white hover:underline">
+                      {item.name}
                     </button>
+                    <span className="text-[10px] font-bold text-stone-400">
+                      {stageLabel(item.stage)} · {stagePct(item.stage)}%
+                      <span className={`ml-2 px-1.5 py-0.5 rounded-sm ${STATUS_BADGE[item.status]}`}>{item.status}</span>
+                    </span>
                   </div>
-                  <div className="space-y-1.5">
-                    {reports.map(r => (
-                      <div key={r.id} className="px-3 py-2.5 border border-stone-200 dark:border-stone-700 rounded-sm bg-white dark:bg-stone-900">
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-xs font-bold text-stone-900 dark:text-white">{itemName(r.itemId)}</p>
-                          <div className="flex items-center gap-0.5">
-                            <button onClick={() => { setEditingWeekly(r); setShowWeeklyForm(true); }} className="p-1 text-stone-400 hover:text-stone-700"><Edit2 size={12} /></button>
-                            <button onClick={() => handleDeleteWeekly(r)} className="p-1 text-stone-400 hover:text-red-500"><Trash2 size={12} /></button>
-                          </div>
-                        </div>
-                        <div className="text-xs text-stone-700 dark:text-stone-300 space-y-0.5">
-                          <p className="whitespace-pre-wrap">{r.progressNote}</p>
-                          {r.issueRisk && <p className="text-amber-700 dark:text-amber-400 whitespace-pre-wrap">이슈: {r.issueRisk}</p>}
-                          {r.nextWeekPlan && <p className="whitespace-pre-wrap">차주: {r.nextWeekPlan}</p>}
-                          {r.supportRequest && <p className="text-blue-700 dark:text-blue-400">요청: {r.supportRequest}</p>}
-                        </div>
+                  <div className="px-3 py-2">
+                    {logs.length === 0 ? (
+                      <p className="text-[11px] text-stone-400">금주 일일 기록 없음</p>
+                    ) : (
+                      <div className="space-y-0.5 mb-2">
+                        {logs.map(l => (
+                          <p key={l.id} className="text-[11px] text-stone-700 dark:text-stone-300">
+                            <span className="font-black text-stone-500 dark:text-stone-400">{fmtDateShort(l.date)}</span>{' '}
+                            {l.workContent}
+                            {l.resultIssue && <span className="text-amber-700 dark:text-amber-400"> — 이슈: {l.resultIssue}</span>}
+                          </p>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                    {extra?.progressNote && (
+                      <p className="text-[11px] text-stone-500 dark:text-stone-400 mb-2">메모: {extra.progressNote}</p>
+                    )}
+                    <div className="flex gap-2 flex-wrap pt-1.5 border-t border-dashed border-stone-200 dark:border-stone-700">
+                      <WeeklyExtraInput label="이슈 / 리스크" value={extra?.issueRisk ?? ''}
+                        onSave={v => handleSaveWeeklyExtra(item, 'issueRisk', v)} />
+                      <WeeklyExtraInput label="차주 계획" value={extra?.nextWeekPlan ?? ''}
+                        onSave={v => handleSaveWeeklyExtra(item, 'nextWeekPlan', v)} />
+                      <WeeklyExtraInput label="지원 요청" value={extra?.supportRequest ?? ''}
+                        onSave={v => handleSaveWeeklyExtra(item, 'supportRequest', v)} />
+                    </div>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
-      {/* ── 탭 4: 월별 계획 ── */}
+      {/* ── 탭 4: 월별 계획 (주차별 실적 자동 연동) ── */}
       {tab === 'monthly' && (
         <div>
           <div className="flex items-center gap-2 mb-3">
             <input type="month" value={month} onChange={e => setMonth(e.target.value)}
               className="text-xs border border-stone-200 dark:border-stone-600 rounded-sm px-2 py-1.5 bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 focus:outline-none" />
-            <span className="text-[11px] text-stone-400">{monthPlans.length}건</span>
+            <span className="text-[11px] text-stone-400">{monthPlans.length}건 — 품목명이 일치하면 주차별 기록 수가 자동 표시됩니다</span>
           </div>
           {monthPlans.length === 0 ? (
             <div className="text-center py-20 border border-dashed border-stone-300 dark:border-stone-700 rounded-sm">
@@ -1145,9 +1328,19 @@ export function RndView({ currentUser }: { currentUser: User }) {
                       <td className={`${cellCls} font-bold text-stone-900 dark:text-white whitespace-nowrap`}>{p.title}</td>
                       <td className={`${cellCls} whitespace-nowrap`}>{p.assignee ?? '-'}</td>
                       <td className={`${cellCls} max-w-[200px] whitespace-pre-wrap`}>{p.monthGoal ?? '-'}</td>
-                      {[0, 1, 2, 3, 4].map(i => (
-                        <td key={i} className={`${cellCls} max-w-[120px] whitespace-pre-wrap`}>{p.weekPlans?.[i] || '-'}</td>
-                      ))}
+                      {[1, 2, 3, 4, 5].map(w => {
+                        const cnt = monthWeekLogCount(p.title, w);
+                        return (
+                          <td key={w} className={`${cellCls} max-w-[120px]`}>
+                            <p className="whitespace-pre-wrap">{p.weekPlans?.[w - 1] || '-'}</p>
+                            {cnt > 0 && (
+                              <span className="inline-block mt-0.5 px-1 py-0.5 text-[9px] font-bold rounded-sm bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                기록 {cnt}
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
                       <td className={`${cellCls} whitespace-nowrap`}>{p.targetDate ? fmtDateShort(p.targetDate) : '-'}</td>
                       <td className={`${cellCls} whitespace-nowrap`}>
                         <div className="flex items-center gap-0.5">
@@ -1166,131 +1359,186 @@ export function RndView({ currentUser }: { currentUser: User }) {
 
       {/* ── 인쇄 전용 영역 (화면에서는 숨김) ── */}
       <div id="rnd-print-area" className="hidden print:block bg-white text-black p-2">
-        <h1 className="text-lg font-black border-b-[3px] border-double border-black pb-1 mb-1">
-          새모양 F&B | R&D {TABS.find(t => t.id === tab)?.label}
-          {tab === 'monthly' && ` — ${month}`}
-        </h1>
-        <p className="text-[10px] text-stone-600 mb-3">출력일: {todayYMD()}{tab === 'board' ? ` · 전체 ${summary.total} · 진행중 ${summary.ongoing} · 완료 ${summary.done} · 평균 진행률 ${summary.avgPct}%` : ''}</p>
+        {/* 품목 상세: 공정 체크시트 리포트 */}
+        {tab === 'board' && selectedItem ? (
+          <>
+            <h1 className="text-lg font-black border-b-[3px] border-double border-black pb-1 mb-1">
+              새모양 F&B | R&D 공정 체크시트
+            </h1>
+            <p className="text-[11px] mb-2">
+              메뉴명: <span className="font-black">{selectedItem.name}</span>
+              {' · '}담당자: {selectedItem.assignee ?? '-'}
+              {' · '}{productTypeOf(selectedItem)} / {selectedItem.category}
+              {' · '}상태: {selectedItem.status}
+              {' · '}단계: {stageLabel(selectedItem.stage)} ({stagePct(selectedItem.stage)}%)
+              {selectedItem.targetDate && ` · 목표일: ${selectedItem.targetDate}`}
+              {' · '}출력일: {todayYMD()}
+            </p>
+            {RND_STAGES.map(s => {
+              const entries = buildChecklist(selectedItem).filter(e => e.stage === s.stage);
+              return (
+                <div key={s.stage} className="mb-2">
+                  <p className={`text-[11px] font-black border-b border-black ${s.stage === selectedItem.stage ? 'bg-stone-200' : ''}`}>
+                    {s.stage}. {s.label} ({entries.filter(e => e.done).length}/{entries.length})
+                    {s.stage === selectedItem.stage && ' ◀ 현재 단계'}
+                  </p>
+                  {entries.map((e, i) => (
+                    <p key={i} className="text-[10px] pl-2">{e.done ? '☑' : '☐'} {e.text}</p>
+                  ))}
+                </div>
+              );
+            })}
+            {selectedItemLogs.length > 0 && (
+              <>
+                <p className="text-[11px] font-black border-b border-black mt-3 mb-1">일일 기록</p>
+                <table className="w-full table-fixed border-collapse text-[10px]">
+                  <colgroup><col className="w-14" /><col className="w-12" /><col /><col /><col className="w-28" /></colgroup>
+                  <thead>
+                    <tr>{['날짜', '작성자', '작업 내용', '결과 / 이슈', '익일 계획'].map((h, i) => (
+                      <th key={i} className={`${printCell} text-left font-bold bg-stone-100`}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {selectedItemLogs.map(l => (
+                      <tr key={l.id}>
+                        <td className={printCell}>{l.date}</td>
+                        <td className={printCell}>{l.author}</td>
+                        <td className={`${printCell} break-words whitespace-pre-wrap`}>{l.workContent}</td>
+                        <td className={`${printCell} break-words whitespace-pre-wrap`}>{l.resultIssue ?? ''}</td>
+                        <td className={`${printCell} break-words`}>{l.nextPlan ?? ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <h1 className="text-lg font-black border-b-[3px] border-double border-black pb-1 mb-1">
+              새모양 F&B | R&D {TABS.find(t => t.id === tab)?.label}
+              {tab === 'monthly' && ` — ${month}`}
+              {tab === 'weekly' && ` — ${weekStart} ~ ${weekEnd}`}
+            </h1>
+            <p className="text-[10px] text-stone-600 mb-3">출력일: {todayYMD()}{tab === 'board' ? ` · 전체 ${summary.total} · 진행중 ${summary.ongoing} · 완료 ${summary.done} · 평균 진행률 ${summary.avgPct}%` : ''}</p>
 
-        {tab === 'board' && (
-          <table className="w-full table-fixed border-collapse text-[10px]">
-            <colgroup>
-              <col className="w-6" /><col className="w-28" /><col className="w-14" /><col className="w-14" /><col className="w-12" />
-              <col className="w-10" /><col className="w-14" /><col className="w-14" /><col className="w-20" />
-              <col className="w-12" /><col className="w-10" /><col className="w-10" /><col /><col />
-            </colgroup>
-            <thead>
-              <tr>
-                {['No', '품목명', '구분', '카테고리', '담당자', '우선', '시작일', '목표일', '현재 단계', 'D-Day', '진행률', '상태', '금주 진행', '다음 액션'].map((h, i) => (
-                  <th key={i} className="border border-stone-400 px-1 py-1 text-left font-bold bg-stone-100">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item, idx) => {
-                const d = item.status !== '완료' ? dday(item.targetDate) : null;
-                return (
-                  <tr key={item.id}>
-                    <td className="border border-stone-400 px-1 py-1">{idx + 1}</td>
-                    <td className="border border-stone-400 px-1 py-1 font-bold break-words">{item.name}</td>
-                    <td className="border border-stone-400 px-1 py-1">{productTypeOf(item)}</td>
-                    <td className="border border-stone-400 px-1 py-1">{item.category}</td>
-                    <td className="border border-stone-400 px-1 py-1">{item.assignee ?? ''}</td>
-                    <td className="border border-stone-400 px-1 py-1">{item.priority}</td>
-                    <td className="border border-stone-400 px-1 py-1">{item.startDate ?? ''}</td>
-                    <td className="border border-stone-400 px-1 py-1">{item.targetDate ?? ''}</td>
-                    <td className="border border-stone-400 px-1 py-1">{stageLabel(item.stage)}</td>
-                    <td className="border border-stone-400 px-1 py-1">{d != null ? fmtDday(d) : ''}</td>
-                    <td className="border border-stone-400 px-1 py-1">{stagePct(item.stage)}%</td>
-                    <td className="border border-stone-400 px-1 py-1">{item.status}</td>
-                    <td className="border border-stone-400 px-1 py-1 break-words align-top">{item.thisWeekNote ?? ''}</td>
-                    <td className="border border-stone-400 px-1 py-1 break-words align-top">{item.nextAction ?? ''}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-
-        {tab === 'daily' && dailyByDate.map(([date, logs]) => (
-          <div key={date} className="mb-3">
-            <p className="text-xs font-black border-b border-black mb-1">{date}</p>
-            <table className="w-full table-fixed border-collapse text-[10px]">
-              <colgroup><col className="w-24" /><col className="w-14" /><col /><col /><col className="w-32" /></colgroup>
-              <thead>
-                <tr>{['품목명', '작성자', '금일 작업 내용', '결과 / 이슈', '익일 계획'].map((h, i) => (
-                  <th key={i} className="border border-stone-400 px-1 py-1 text-left font-bold bg-stone-100">{h}</th>
-                ))}</tr>
-              </thead>
-              <tbody>
-                {logs.map(l => (
-                  <tr key={l.id}>
-                    <td className="border border-stone-400 px-1 py-1 font-bold break-words align-top">{itemName(l.itemId)}</td>
-                    <td className="border border-stone-400 px-1 py-1 align-top">{l.author}</td>
-                    <td className="border border-stone-400 px-1 py-1 break-words whitespace-pre-wrap align-top">{l.workContent}</td>
-                    <td className="border border-stone-400 px-1 py-1 break-words whitespace-pre-wrap align-top">{l.resultIssue ?? ''}</td>
-                    <td className="border border-stone-400 px-1 py-1 break-words align-top">{l.nextPlan ?? ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
-
-        {tab === 'weekly' && weeklyGroups.map(([key, reports]) => {
-          const [ps, pe] = key.split('|');
-          return (
-            <div key={key} className="mb-3">
-              <p className="text-xs font-black border-b border-black mb-1">{ps} ~ {pe}</p>
+            {tab === 'board' && (
               <table className="w-full table-fixed border-collapse text-[10px]">
-                <colgroup><col className="w-24" /><col /><col /><col /><col className="w-28" /></colgroup>
+                <colgroup>
+                  <col className="w-6" /><col className="w-28" /><col className="w-14" /><col className="w-14" /><col className="w-12" />
+                  <col className="w-10" /><col className="w-14" /><col className="w-14" /><col className="w-20" />
+                  <col className="w-12" /><col className="w-10" /><col className="w-10" /><col /><col />
+                </colgroup>
                 <thead>
-                  <tr>{['품목명', '금주 진행 사항', '이슈 / 리스크', '차주 계획', '지원 요청'].map((h, i) => (
-                    <th key={i} className="border border-stone-400 px-1 py-1 text-left font-bold bg-stone-100">{h}</th>
+                  <tr>
+                    {['No', '품목명', '구분', '카테고리', '담당자', '우선', '시작일', '목표일', '현재 단계', 'D-Day', '진행률', '상태', '금주 진행', '다음 액션'].map((h, i) => (
+                      <th key={i} className={`${printCell} text-left font-bold bg-stone-100`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, idx) => {
+                    const d = item.status !== '완료' ? dday(item.targetDate) : null;
+                    return (
+                      <tr key={item.id}>
+                        <td className={printCell}>{idx + 1}</td>
+                        <td className={`${printCell} font-bold break-words`}>{item.name}</td>
+                        <td className={printCell}>{productTypeOf(item)}</td>
+                        <td className={printCell}>{item.category}</td>
+                        <td className={printCell}>{item.assignee ?? ''}</td>
+                        <td className={printCell}>{item.priority}</td>
+                        <td className={printCell}>{item.startDate ?? ''}</td>
+                        <td className={printCell}>{item.targetDate ?? ''}</td>
+                        <td className={printCell}>{stageLabel(item.stage)}</td>
+                        <td className={printCell}>{d != null ? fmtDday(d) : ''}</td>
+                        <td className={printCell}>{stagePct(item.stage)}%</td>
+                        <td className={printCell}>{item.status}</td>
+                        <td className={`${printCell} break-words`}>{item.thisWeekNote ?? ''}</td>
+                        <td className={`${printCell} break-words`}>{item.nextAction ?? ''}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+
+            {tab === 'daily' && dailyByDate.map(([date, logs]) => (
+              <div key={date} className="mb-3">
+                <p className="text-xs font-black border-b border-black mb-1">{date}</p>
+                <table className="w-full table-fixed border-collapse text-[10px]">
+                  <colgroup><col className="w-24" /><col className="w-14" /><col /><col /><col className="w-32" /></colgroup>
+                  <thead>
+                    <tr>{['품목명', '작성자', '금일 작업 내용', '결과 / 이슈', '익일 계획'].map((h, i) => (
+                      <th key={i} className={`${printCell} text-left font-bold bg-stone-100`}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {logs.map(l => (
+                      <tr key={l.id}>
+                        <td className={`${printCell} font-bold break-words`}>{itemName(l.itemId)}</td>
+                        <td className={printCell}>{l.author}</td>
+                        <td className={`${printCell} break-words whitespace-pre-wrap`}>{l.workContent}</td>
+                        <td className={`${printCell} break-words whitespace-pre-wrap`}>{l.resultIssue ?? ''}</td>
+                        <td className={`${printCell} break-words`}>{l.nextPlan ?? ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+
+            {tab === 'weekly' && weeklyData.map(({ item, logs, extra }) => (
+              <div key={item.id} className="mb-3">
+                <p className="text-xs font-black border-b border-black mb-1">
+                  {item.name} — {stageLabel(item.stage)} {stagePct(item.stage)}% [{item.status}]
+                </p>
+                {logs.length === 0
+                  ? <p className="text-[10px] pl-2">금주 기록 없음</p>
+                  : logs.map(l => (
+                      <p key={l.id} className="text-[10px] pl-2">
+                        · {fmtDateShort(l.date)}: {l.workContent}{l.resultIssue ? ` — 이슈: ${l.resultIssue}` : ''}
+                      </p>
+                    ))}
+                {extra?.progressNote && <p className="text-[10px] pl-2">· 메모: {extra.progressNote}</p>}
+                {extra?.issueRisk && <p className="text-[10px] pl-2 font-bold">· 이슈/리스크: {extra.issueRisk}</p>}
+                {extra?.nextWeekPlan && <p className="text-[10px] pl-2">· 차주 계획: {extra.nextWeekPlan}</p>}
+                {extra?.supportRequest && <p className="text-[10px] pl-2">· 지원 요청: {extra.supportRequest}</p>}
+              </div>
+            ))}
+
+            {tab === 'monthly' && (
+              <table className="w-full table-fixed border-collapse text-[10px]">
+                <colgroup>
+                  <col className="w-6" /><col className="w-24" /><col className="w-12" /><col />
+                  <col /><col /><col /><col /><col /><col className="w-16" />
+                </colgroup>
+                <thead>
+                  <tr>{['No', '품목 / 과제', '담당자', '월 목표', 'W1', 'W2', 'W3', 'W4', 'W5', '목표일'].map((h, i) => (
+                    <th key={i} className={`${printCell} text-left font-bold bg-stone-100`}>{h}</th>
                   ))}</tr>
                 </thead>
                 <tbody>
-                  {reports.map(r => (
-                    <tr key={r.id}>
-                      <td className="border border-stone-400 px-1 py-1 font-bold break-words align-top">{itemName(r.itemId)}</td>
-                      <td className="border border-stone-400 px-1 py-1 break-words whitespace-pre-wrap align-top">{r.progressNote}</td>
-                      <td className="border border-stone-400 px-1 py-1 break-words whitespace-pre-wrap align-top">{r.issueRisk ?? ''}</td>
-                      <td className="border border-stone-400 px-1 py-1 break-words whitespace-pre-wrap align-top">{r.nextWeekPlan ?? ''}</td>
-                      <td className="border border-stone-400 px-1 py-1 break-words align-top">{r.supportRequest ?? ''}</td>
+                  {monthPlans.map((p, idx) => (
+                    <tr key={p.id}>
+                      <td className={printCell}>{idx + 1}</td>
+                      <td className={`${printCell} font-bold break-words`}>{p.title}</td>
+                      <td className={printCell}>{p.assignee ?? ''}</td>
+                      <td className={`${printCell} break-words whitespace-pre-wrap`}>{p.monthGoal ?? ''}</td>
+                      {[1, 2, 3, 4, 5].map(w => {
+                        const cnt = monthWeekLogCount(p.title, w);
+                        return (
+                          <td key={w} className={`${printCell} break-words`}>
+                            {p.weekPlans?.[w - 1] ?? ''}{cnt > 0 ? ` (기록 ${cnt})` : ''}
+                          </td>
+                        );
+                      })}
+                      <td className={printCell}>{p.targetDate ?? ''}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          );
-        })}
-
-        {tab === 'monthly' && (
-          <table className="w-full table-fixed border-collapse text-[10px]">
-            <colgroup>
-              <col className="w-6" /><col className="w-24" /><col className="w-12" /><col />
-              <col /><col /><col /><col /><col /><col className="w-16" />
-            </colgroup>
-            <thead>
-              <tr>{['No', '품목 / 과제', '담당자', '월 목표', 'W1', 'W2', 'W3', 'W4', 'W5', '목표일'].map((h, i) => (
-                <th key={i} className="border border-stone-400 px-1 py-1 text-left font-bold bg-stone-100">{h}</th>
-              ))}</tr>
-            </thead>
-            <tbody>
-              {monthPlans.map((p, idx) => (
-                <tr key={p.id}>
-                  <td className="border border-stone-400 px-1 py-1 align-top">{idx + 1}</td>
-                  <td className="border border-stone-400 px-1 py-1 font-bold break-words align-top">{p.title}</td>
-                  <td className="border border-stone-400 px-1 py-1 align-top">{p.assignee ?? ''}</td>
-                  <td className="border border-stone-400 px-1 py-1 break-words whitespace-pre-wrap align-top">{p.monthGoal ?? ''}</td>
-                  {[0, 1, 2, 3, 4].map(i => (
-                    <td key={i} className="border border-stone-400 px-1 py-1 break-words align-top">{p.weekPlans?.[i] ?? ''}</td>
-                  ))}
-                  <td className="border border-stone-400 px-1 py-1 align-top">{p.targetDate ?? ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            )}
+          </>
         )}
       </div>
 
@@ -1303,10 +1551,6 @@ export function RndView({ currentUser }: { currentUser: User }) {
         <DailyLogModal log={editingDaily ?? undefined} items={items} onSave={handleSaveDaily}
           onClose={() => { setShowDailyForm(false); setEditingDaily(null); }} />
       )}
-      {showWeeklyForm && (
-        <WeeklyModal report={editingWeekly ?? undefined} items={items} onSave={handleSaveWeekly}
-          onClose={() => { setShowWeeklyForm(false); setEditingWeekly(null); }} />
-      )}
       {showMonthlyForm && (
         <MonthlyModal plan={editingMonthly ?? undefined} month={month} items={items} onSave={handleSaveMonthly}
           onClose={() => { setShowMonthlyForm(false); setEditingMonthly(null); }} />
@@ -1315,11 +1559,6 @@ export function RndView({ currentUser }: { currentUser: User }) {
         <SendToFactoryModal item={sendingItem}
           onSave={data => handleSendToFactory(sendingItem, data)}
           onClose={() => setSendingItem(null)} />
-      )}
-      {checklistItem && (
-        <ChecklistModal item={checklistItem}
-          onSave={(checks, stage) => handleSaveChecks(checklistItem, checks, stage)}
-          onClose={() => setChecklistItem(null)} />
       )}
     </div>
   );

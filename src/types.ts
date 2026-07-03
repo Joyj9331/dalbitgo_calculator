@@ -957,7 +957,8 @@ export interface RndItem {
   startDate?: string;        // YYYY-MM-DD
   targetDate?: string;       // YYYY-MM-DD → D-Day 자동 계산
   stage: number;             // 1~8 공정 단계 (표준레시피→출시 준비) → 진행률 자동 계산
-  stageChecks?: Record<string, boolean>;  // 공정 체크시트 — key: `${단계}-${세부항목 index}`
+  stageChecks?: Record<string, boolean>;  // (구버전) 공정 체크 — key: `${단계}-${index}`, checklist로 마이그레이션됨
+  checklist?: { stage: number; text: string; done: boolean }[];  // 공정 체크시트 (품목별 항목 편집 가능)
   status: RndStatus;
   thisWeekNote?: string;     // 금주 진행 내용
   nextAction?: string;       // 다음 액션
@@ -979,12 +980,14 @@ export interface RndDailyLog {
   updatedAt: string;
 }
 
+// 주간보고는 일일기록(rnd_daily)에서 자동 생성 — 이 문서는 주별 보완 코멘트만 담음
+// 문서 id: `${itemId}_${periodStart(월요일)}`
 export interface RndWeeklyReport {
   id: string;
-  periodStart: string;       // YYYY-MM-DD
+  periodStart: string;       // YYYY-MM-DD (주 시작, 월요일)
   periodEnd: string;         // YYYY-MM-DD
   itemId: string;
-  progressNote: string;      // 금주 진행 사항
+  progressNote?: string;     // (구버전 수동 작성분) 금주 진행 사항
   issueRisk?: string;        // 이슈 / 리스크
   nextWeekPlan?: string;     // 차주 계획
   supportRequest?: string;   // 지원 요청 사항
