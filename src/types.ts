@@ -956,7 +956,8 @@ export interface RndItem {
   priority: RndPriority;
   startDate?: string;        // YYYY-MM-DD
   targetDate?: string;       // YYYY-MM-DD → D-Day 자동 계산
-  stage: number;             // 1~6 (기획→매뉴얼화/출시) → 진행률 자동 계산
+  stage: number;             // 1~8 공정 단계 (표준레시피→출시 준비) → 진행률 자동 계산
+  stageChecks?: Record<string, boolean>;  // 공정 체크시트 — key: `${단계}-${세부항목 index}`
   status: RndStatus;
   thisWeekNote?: string;     // 금주 진행 내용
   nextAction?: string;       // 다음 액션

@@ -15,17 +15,27 @@ import { shareKakao } from '../utils/kakao';
 import {
   Plus, X, Edit2, Trash2, ChevronUp, ChevronDown,
   Printer, MessageCircle, FlaskConical, ClipboardList,
-  CalendarDays, CalendarRange, NotebookPen, Factory,
+  CalendarDays, CalendarRange, NotebookPen, Factory, CheckSquare,
 } from 'lucide-react';
 
-// ── 기준정보 (엑셀 '기준정보' 시트 대체) ─────────────────────
+// ── 기준정보: 실제 R&D 8단계 공정 (2026-07 제조실 공정 기준) ──
 const RND_STAGES = [
-  { stage: 1, label: '기획', pct: 10 },
-  { stage: 2, label: '레시피 개발', pct: 30 },
-  { stage: 3, label: '시제품/테스트', pct: 50 },
-  { stage: 4, label: '내부 품평', pct: 70 },
-  { stage: 5, label: '원가/스펙 확정', pct: 85 },
-  { stage: 6, label: '매뉴얼화/출시', pct: 100 },
+  { stage: 1, short: '표준레시피', label: '표준레시피 작성', pct: 10,
+    subs: ['표준레시피 작성 (유/무)'] },
+  { stage: 2, short: '시범 생산', label: '시범 생산 및 상품 가치 파악', pct: 25,
+    subs: ['맛 확인', '관능평가', '출시가능성 확인', '식재료 공급 가능성 유무 (물류)'] },
+  { stage: 3, short: '원가 검토', label: '원가 검토', pct: 40,
+    subs: ['제조원가 산출', '공급가 산출'] },
+  { stage: 4, short: '대량생산 검증', label: '제조 공정 및 대량 생산 검증', pct: 55,
+    subs: ['맛 편차 확인', '대량 생산성 검증', '유통기한 확인'] },
+  { stage: 5, short: '포장 개발', label: '포장 개발', pct: 70,
+    subs: ['용기 선정 (실링·진공포장지)', '라벨 제작', '포장성 검토', '보관 방법'] },
+  { stage: 6, short: '매장 테스트', label: '매장 공급 테스트', pct: 85,
+    subs: ['매장 피드백 (선정)', '보관 장소 파악 (물류)'] },
+  { stage: 7, short: '문제점·개선', label: '문제점 및 개선사항', pct: 92,
+    subs: ['테스트 결과 정리', '개선 계획 수립'] },
+  { stage: 8, short: '출시 준비', label: '차주 계획 일정 (출시 준비)', pct: 100,
+    subs: ['식품제조보고', '매장 전달 (FC다움)', '출시 준비 일정 수립'] },
 ];
 const CATEGORIES: RndCategory[] = ['소스', '반찬', '양념/베이스', '기타'];
 const PRIORITIES: RndPriority[] = ['상', '중', '하'];
@@ -37,7 +47,14 @@ const productTypeOf = (item: RndItem): RndProductType => item.productType ?? '�
 const stagePct = (stage: number) => RND_STAGES.find(s => s.stage === stage)?.pct ?? 0;
 const stageLabel = (stage: number) => {
   const s = RND_STAGES.find(x => x.stage === stage);
-  return s ? `${s.stage}. ${s.label}` : '-';
+  return s ? `${s.stage}. ${s.short}` : '-';
+};
+// 현재 단계의 체크시트 진행 (완료 수 / 전체 수)
+const stageCheckProgress = (item: RndItem): { done: number; total: number } => {
+  const s = RND_STAGES.find(x => x.stage === item.stage);
+  if (!s) return { done: 0, total: 0 };
+  const done = s.subs.filter((_, i) => item.stageChecks?.[`${s.stage}-${i}`]).length;
+  return { done, total: s.subs.length };
 };
 
 const STATUS_BADGE: Record<RndStatus, string> = {
@@ -197,7 +214,7 @@ function ItemFormModal({ item, onSave, onClose }: {
         <div>
           <label className={labelCls}>현재 단계 <span className="text-stone-400 font-normal">— 진행률 자동</span></label>
           <select value={stage} onChange={e => setStage(Number(e.target.value))} className={inputCls}>
-            {RND_STAGES.map(s => <option key={s.stage} value={s.stage}>{s.stage}. {s.label} ({s.pct}%)</option>)}
+            {RND_STAGES.map(s => <option key={s.stage} value={s.stage}>{s.stage}. {s.short} ({s.pct}%)</option>)}
           </select>
         </div>
         <div>
@@ -396,6 +413,64 @@ function MonthlyModal({ plan, month, items, onSave, onClose }: {
   );
 }
 
+// ── 공정 체크시트 모달 (품목별 8단계 세부 항목 체크) ─────────
+function ChecklistModal({ item, onSave, onClose }: {
+  item: RndItem;
+  onSave: (checks: Record<string, boolean>, stage: number) => void;
+  onClose: () => void;
+}) {
+  const [checks, setChecks] = useState<Record<string, boolean>>(item.stageChecks ?? {});
+  const [stage, setStage] = useState(item.stage);
+  const toggle = (k: string) => setChecks(p => ({ ...p, [k]: !p[k] }));
+
+  return (
+    <ModalShell title="R&D 공정 체크시트" onClose={onClose} wide
+      footer={<FooterButtons onClose={onClose} onSave={() => onSave(checks, stage)} disabled={false} saveLabel="저장" />}>
+      <div className="flex items-center justify-between pb-2 border-b border-stone-200 dark:border-stone-700">
+        <p className="text-sm font-black text-stone-900 dark:text-white">
+          메뉴명: {item.name}
+          <span className="ml-3 font-bold text-stone-500 dark:text-stone-400 text-xs">담당자: {item.assignee ?? '-'}</span>
+        </p>
+      </div>
+      {RND_STAGES.map(s => {
+        const done = s.subs.filter((_, i) => checks[`${s.stage}-${i}`]).length;
+        const allDone = done === s.subs.length;
+        const isCurrent = s.stage === stage;
+        return (
+          <div key={s.stage} className={`border rounded-sm ${isCurrent ? 'border-stone-800 dark:border-stone-300' : 'border-stone-200 dark:border-stone-700'}`}>
+            <button onClick={() => setStage(s.stage)}
+              className={`w-full flex items-center justify-between px-3 py-2 text-left ${isCurrent ? 'bg-stone-100 dark:bg-stone-800' : 'hover:bg-stone-50 dark:hover:bg-stone-800/50'}`}
+              title="클릭하면 이 단계를 현재 단계로 설정">
+              <span className={`text-xs font-black ${allDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-900 dark:text-white'}`}>
+                {s.stage}. {s.label}
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-stone-400">{done}/{s.subs.length}</span>
+                {isCurrent && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-sm bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900">현재 단계</span>}
+              </span>
+            </button>
+            <div className="px-3 py-2 space-y-1.5 border-t border-stone-100 dark:border-stone-800">
+              {s.subs.map((sub, i) => {
+                const k = `${s.stage}-${i}`;
+                return (
+                  <label key={k} className="flex items-center gap-2 cursor-pointer group">
+                    <input type="checkbox" checked={!!checks[k]} onChange={() => toggle(k)}
+                      className="w-3.5 h-3.5 accent-stone-800 dark:accent-stone-200" />
+                    <span className={`text-xs ${checks[k] ? 'text-stone-400 line-through' : 'text-stone-700 dark:text-stone-300'} group-hover:text-stone-900 dark:group-hover:text-white`}>
+                      {sub}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      <p className="text-[10px] text-stone-400">※ 단계 제목을 클릭하면 해당 단계가 '현재 단계'로 설정되고 진행률에 반영됩니다.</p>
+    </ModalShell>
+  );
+}
+
 // ── 제조실 이관 모달 (제조품 + 완료 품목 전용) ──────────────
 function SendToFactoryModal({ item, onSave, onClose }: {
   item: RndItem;
@@ -458,6 +533,7 @@ export function RndView({ currentUser }: { currentUser: User }) {
   const [showMonthlyForm, setShowMonthlyForm] = useState(false);
   const [editingMonthly, setEditingMonthly] = useState<RndMonthlyPlan | null>(null);
   const [sendingItem, setSendingItem] = useState<RndItem | null>(null);
+  const [checklistItem, setChecklistItem] = useState<RndItem | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<RndStatus | 'all'>('진행중');
   const [dailyFilterItemId, setDailyFilterItemId] = useState('');
@@ -532,6 +608,18 @@ export function RndView({ currentUser }: { currentUser: User }) {
         updateDoc(doc(salesDb, 'rnd_items', target.id), { order: item.order, updatedAt: ts() }),
       ]);
     } catch { toast.error('순서 변경 실패'); await loadAll(); }
+  };
+
+  // 공정 체크시트 저장 (체크 상태 + 현재 단계)
+  const handleSaveChecks = async (item: RndItem, checks: Record<string, boolean>, stage: number) => {
+    try {
+      await updateDoc(doc(salesDb, 'rnd_items', item.id), { stageChecks: checks, stage, updatedAt: ts() });
+      toast.success('체크시트 저장됨');
+      setChecklistItem(null);
+      await loadAll();
+    } catch (e: unknown) {
+      toast.error(`저장 실패: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   // 완료된 제조품 → 제조실(factory_items) 이관
@@ -870,8 +958,17 @@ export function RndView({ currentUser }: { currentUser: User }) {
                         <td className={cellCls}>
                           <select value={item.stage} onChange={e => handleInlineUpdate(item, { stage: Number(e.target.value) })}
                             className="text-xs border border-stone-200 dark:border-stone-600 rounded-sm px-1 py-1 bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 focus:outline-none">
-                            {RND_STAGES.map(s => <option key={s.stage} value={s.stage}>{s.stage}. {s.label}</option>)}
+                            {RND_STAGES.map(s => <option key={s.stage} value={s.stage}>{s.stage}. {s.short}</option>)}
                           </select>
+                          {(() => {
+                            const { done, total } = stageCheckProgress(item);
+                            return (
+                              <button onClick={() => setChecklistItem(item)}
+                                className={`block mt-0.5 text-[9px] font-bold hover:underline ${done === total && total > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-400'}`}>
+                                체크 {done}/{total}
+                              </button>
+                            );
+                          })()}
                         </td>
                         <td className={`${cellCls} whitespace-nowrap font-bold ${d != null && d < 0 ? 'text-red-500' : d != null && d <= 7 ? 'text-amber-600 dark:text-amber-400' : ''}`}>
                           {d != null ? fmtDday(d) : '-'}
@@ -897,6 +994,8 @@ export function RndView({ currentUser }: { currentUser: User }) {
                         </td>
                         <td className={`${cellCls} whitespace-nowrap`}>
                           <div className="flex items-center gap-0.5">
+                            <button onClick={() => setChecklistItem(item)} title="공정 체크시트"
+                              className="p-1 text-stone-400 hover:text-stone-700"><CheckSquare size={12} /></button>
                             {pType === '제조품' && item.status === '완료' && (
                               item.factoryItemId
                                 ? <span title="제조실 등록됨" className="p-1 text-emerald-500"><Factory size={12} /></span>
@@ -1216,6 +1315,11 @@ export function RndView({ currentUser }: { currentUser: User }) {
         <SendToFactoryModal item={sendingItem}
           onSave={data => handleSendToFactory(sendingItem, data)}
           onClose={() => setSendingItem(null)} />
+      )}
+      {checklistItem && (
+        <ChecklistModal item={checklistItem}
+          onSave={(checks, stage) => handleSaveChecks(checklistItem, checks, stage)}
+          onClose={() => setChecklistItem(null)} />
       )}
     </div>
   );
