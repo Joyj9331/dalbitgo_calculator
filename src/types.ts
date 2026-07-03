@@ -958,7 +958,9 @@ export interface RndItem {
   targetDate?: string;       // YYYY-MM-DD → D-Day 자동 계산
   stage: number;             // 1~8 공정 단계 (표준레시피→출시 준비) → 진행률 자동 계산
   stageChecks?: Record<string, boolean>;  // (구버전) 공정 체크 — key: `${단계}-${index}`, checklist로 마이그레이션됨
-  checklist?: { stage: number; text: string; done: boolean }[];  // 공정 체크시트 (품목별 항목 편집 가능)
+  // 공정 체크시트 (품목별 항목 편집 가능). memo = 항목별 이슈사항, doneAt = 체크 완료일
+  checklist?: { stage: number; text: string; done: boolean; doneAt?: string; memo?: string; memoAt?: string }[];
+  schedule?: { id: string; date: string; label: string }[];  // 계획 일정 → R&D 전용 캘린더에 자동 표시
   status: RndStatus;
   thisWeekNote?: string;     // 금주 진행 내용
   nextAction?: string;       // 다음 액션
