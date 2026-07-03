@@ -427,7 +427,9 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
 
   // ── 공정 체크시트 (즉시 저장 + 단계 자동 진행) ──────────
   const saveChecklist = async (item: RndItem, checklist: ChecklistEntry[], newStage?: number) => {
-    const patch: Record<string, unknown> = { checklist, updatedAt: ts() };
+    // Firestore는 배열 내부 객체의 undefined 값도 거부 → 항목별로 undefined 필드 제거
+    const cleaned = checklist.map(e => scrub(e as unknown as Record<string, unknown>));
+    const patch: Record<string, unknown> = { checklist: cleaned, updatedAt: ts() };
     if (newStage != null) patch.stage = newStage;
     setItems(prev => prev.map(i => i.id === item.id
       ? { ...i, checklist, ...(newStage != null ? { stage: newStage } : {}) }

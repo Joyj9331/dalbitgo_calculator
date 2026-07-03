@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-07-04 — Claude Code (2차)
+
+### R&D 체크 해제 시 저장 실패 버그 수정
+
+- **증상**: 체크박스 해제(두 번 클릭) 시 "체크시트 저장 실패" toast.
+- **원인**: 해제 시 `doneAt: undefined`(메모 삭제 시 `memo: undefined`도) — Firestore는 배열 **내부 객체**의 undefined도 거부. 기존 scrub은 최상위 필드만 정리.
+- **수정**: saveChecklist에서 각 체크 항목을 scrub 후 저장(`checklist.map(scrub)`). 빌드 ✓.
+
 ## 2026-07-04 — Claude Code
 
 ### R&D 대폭 단순화 — 2탭(품목/캘린더), 항목별 메모, 자동 보고
