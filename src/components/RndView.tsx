@@ -595,6 +595,8 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
   while (calCells.length % 7 !== 0) calCells.push(null);
+  const calWeeks: (number | null)[][] = [];
+  for (let i = 0; i < calCells.length; i += 7) calWeeks.push(calCells.slice(i, i + 7));
   const EV_COLOR: Record<'start' | 'target' | 'plan', string> = {
     start: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
     target: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
@@ -1045,6 +1047,44 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
                 </div>
               );
             })}
+          </>
+        ) : tab === 'calendar' ? (
+          <>
+            <h1 className="text-lg font-black border-b-[3px] border-double border-black pb-1 mb-1">새모양 F&B | R&D 캘린더 — {cy}년 {cm}월</h1>
+            <p className="text-[10px] text-stone-600 mb-2">출력일: {todayYMD()} · ▶시작 ★목표완료 ·계획</p>
+            <table className="w-full table-fixed border-collapse text-[9px]">
+              <thead>
+                <tr>
+                  {['월', '화', '수', '목', '금', '토', '일'].map(d => (
+                    <th key={d} className={`${printCell} text-center font-bold bg-stone-100`}>{d}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {calWeeks.map((week, wi) => (
+                  <tr key={wi}>
+                    {week.map((day, di) => {
+                      const ymd = day ? `${calMonth}-${String(day).padStart(2, '0')}` : '';
+                      const evs = day ? (calEvents.get(ymd) ?? []) : [];
+                      return (
+                        <td key={di} className={`${printCell} h-16 w-[14.28%]`}>
+                          {day && (
+                            <>
+                              <p className="font-bold">{day}</p>
+                              {evs.map((ev, j) => (
+                                <p key={j} className="break-words leading-tight">
+                                  {ev.type === 'start' ? '▶ ' : ev.type === 'target' ? '★ ' : '· '}{ev.label}
+                                </p>
+                              ))}
+                            </>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </>
         ) : (
           <>
