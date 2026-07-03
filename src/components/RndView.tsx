@@ -605,6 +605,8 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
 
   return (
     <div>
+      {/* 화면 UI — 인쇄 시 display:none으로 접어 인쇄영역만 남김(빈 페이지 방지) */}
+      <div className="print:hidden">
       {/* 헤더 */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
@@ -1017,6 +1019,8 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
           </div>
         </div>
       )}
+
+      </div>{/* 화면 UI 끝 (print:hidden) */}
 
       {/* ── 인쇄 전용 영역 ── */}
       <div id="rnd-print-area" className="hidden print:block bg-white text-black p-2">

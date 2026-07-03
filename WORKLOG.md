@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-07-04 — Claude Code (4차)
+
+### R&D 인쇄 빈 2페이지 수정
+
+- **증상**: 체크시트 인쇄가 실제 1페이지인데 빈 2페이지까지 생성.
+- **원인**: 전역 `@media print { body * { visibility:hidden } }`는 숨겨도 **높이는 유지** → 절대배치 #rnd-print-area 뒤로 화면 UI 높이가 남아 빈 페이지 발생.
+- **수정**: RndView 화면 UI 전체를 `<div className="print:hidden">`로 감싸 인쇄 시 display:none → 인쇄영역 높이만 남음. (다른 인쇄뷰는 콘텐츠가 페이지를 채워 증상 없었음 — 필요 시 동일 패턴 적용) 빌드 ✓.
+
 ## 2026-07-04 — Claude Code (3차)
 
 ### R&D 캘린더 탭 인쇄 = 캘린더 그리드
