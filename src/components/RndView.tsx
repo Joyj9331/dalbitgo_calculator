@@ -1038,14 +1038,16 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
             </p>
             {RND_STAGES.map(s => {
               const entries = buildChecklist(selectedItem).filter(e => e.stage === s.stage);
+              const isCurrent = s.stage === selectedItem.stage;
               return (
-                <div key={s.stage} className="mb-2">
-                  <p className={`text-[11px] font-black border-b border-black ${s.stage === selectedItem.stage ? 'bg-stone-200' : ''}`}>
-                    {s.stage}. {s.label} ({entries.filter(e => e.done).length}/{entries.length}){s.stage === selectedItem.stage && ' ◀ 현재 단계'}
+                <div key={s.stage} className={`mb-2 ${isCurrent ? 'border-2 border-black rounded p-1.5 bg-stone-50' : ''}`}>
+                  <p className={`text-[11px] font-black border-b border-black ${isCurrent ? 'bg-stone-200' : ''}`}>
+                    {s.stage}. {s.label} ({entries.filter(e => e.done).length}/{entries.length}){isCurrent && ' ◀ 현재 단계'}
                   </p>
                   {entries.map((e, i) => (
                     <p key={i} className="text-[10px] pl-2">
-                      {e.done ? '☑' : '☐'} {e.text}{e.memo ? `  ⚑ ${e.memo}` : ''}
+                      {e.done ? '☑' : '☐'} {e.text}
+                      {e.memo ? <span className="text-orange-600 font-black">{`  ⚑ ${e.memo}`}</span> : ''}
                     </p>
                   ))}
                 </div>
@@ -1125,7 +1127,7 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
                       <td className={printCell}>{d != null ? fmtDday(d) : ''}</td>
                       <td className={printCell}>{stagePct(item.stage)}%</td>
                       <td className={printCell}>{item.status}</td>
-                      <td className={`${printCell} break-words`}>{remain}{issues ? `  ${issues}` : ''}</td>
+                      <td className={`${printCell} break-words`}>{remain}{issues ? <span className="text-orange-600 font-black">{`  ${issues}`}</span> : ''}</td>
                     </tr>
                   );
                 })}
