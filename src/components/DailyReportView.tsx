@@ -4,11 +4,12 @@ import {
   collection, getDocs, doc, setDoc, updateDoc,
   query, where, orderBy
 } from 'firebase/firestore';
-import { DailyReport, DailyReportItem, DailyItemStatus, Employee, User, Department, Task, WeeklyReport, WeeklyReportItem, FranchiseSchedule } from '../types';
+import { DailyReport, DailyReportItem, DailyItemStatus, Employee, User, Department, Task, WeeklyReport, WeeklyReportItem, FranchiseSchedule, WorkProfile, AssignedStore } from '../types';
 import { useToast } from './Toast';
 import { FeedView } from './FeedView';
 import { shareDailyReport, shareWeeklyReport } from '../utils/kakao';
-import { Plus, X, CheckCircle, XCircle, Clock, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Send, Briefcase, AtSign, ArrowRight, BarChart3, Store, CalendarDays, Rss, FileText, GripVertical } from 'lucide-react';
+import { fetchAllStores, FcdaumStore } from '../fcdaum';
+import { Plus, X, CheckCircle, XCircle, Clock, ChevronDown, ChevronLeft, ChevronRight, RefreshCw, Send, Briefcase, AtSign, ArrowRight, BarChart3, Store, CalendarDays, Rss, FileText, GripVertical, Star, Search } from 'lucide-react';
 import { DndContext, DragOverlay, useDraggable, useDroppable, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { AtMentionInput, saveMentions } from './ui/AtMentionInput';
 
@@ -671,6 +672,175 @@ function DroppableMorningZone({ children, active }: { children: React.ReactNode;
   );
 }
 
+/* ── 직무 프로필 패널 (고정 주업무 3 + FC다움 담당매장) ──────── */
+function WorkProfilePanel({ mainTasks, assignedStores, onSave, saving }: {
+  mainTasks: string[];
+  assignedStores: AssignedStore[];
+  onSave: (tasks: string[], stores: AssignedStore[]) => void;
+  saving: boolean;
+}) {
+  const [tasks, setTasks] = useState<string[]>(() => {
+    const t = [...(mainTasks ?? [])];
+    while (t.length < 3) t.push('');
+    return t.slice(0, 3);
+  });
+  const [stores, setStores] = useState<AssignedStore[]>(assignedStores ?? []);
+
+  // 로드 완료로 props가 바뀌면 폼 동기화 (더티 상태가 아닐 때만 갱신 — 최초 로드 대응)
+  const initialized = useRef(false);
+  useEffect(() => {
+    if (initialized.current) return;
+    if ((mainTasks?.length ?? 0) > 0 || (assignedStores?.length ?? 0) > 0) {
+      const t = [...mainTasks]; while (t.length < 3) t.push(''); setTasks(t.slice(0, 3));
+      setStores(assignedStores ?? []);
+      initialized.current = true;
+    }
+  }, [mainTasks, assignedStores]);
+
+  // FC다움 매장 피커
+  const [showPicker, setShowPicker] = useState(false);
+  const [fcStores, setFcStores] = useState<FcdaumStore[]>([]);
+  const [fcLoading, setFcLoading] = useState(false);
+  const [fcError, setFcError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  const openPicker = () => {
+    setShowPicker(true);
+    if (fcStores.length === 0 && !fcLoading) {
+      setFcLoading(true); setFcError(null);
+      fetchAllStores()
+        .then(setFcStores)
+        .catch(e => setFcError(e instanceof Error ? e.message : '매장 목록을 불러오지 못했습니다'))
+        .finally(() => setFcLoading(false));
+    }
+  };
+
+  const addStore = (s: FcdaumStore) => {
+    if (stores.some(x => x.storeNo === s.storeNo)) return;
+    setStores(prev => [...prev, { storeNo: s.storeNo, storeName: s.storeNm }]);
+  };
+  const removeStore = (storeNo: number) => setStores(prev => prev.filter(x => x.storeNo !== storeNo));
+
+  const filtered = search.trim()
+    ? fcStores.filter(s => `${s.storeNm} ${s.storeNo} ${s.address ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 40)
+    : fcStores.slice(0, 40);
+
+  const handleSave = () => {
+    const cleanTasks = tasks.map(t => t.trim()).filter(Boolean);
+    onSave(cleanTasks, stores);
+  };
+
+  return (
+    <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-stone-100 dark:border-stone-800">
+        <Star size={13} className="text-amber-500" />
+        <span className="text-xs font-black text-stone-800 dark:text-stone-200">내 주업무 · 담당 매장</span>
+        <span className="ml-auto text-[10px] text-stone-400">고정 · 매주 유지</span>
+      </div>
+
+      <div className="px-4 py-4 space-y-4">
+        {/* 고정 주업무 3 */}
+        <div>
+          <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-2">주업무 (최대 3)</p>
+          <div className="space-y-2">
+            {tasks.map((t, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-[10px] font-black text-amber-600 dark:text-amber-400 shrink-0">{i + 1}</span>
+                <input
+                  value={t}
+                  onChange={e => setTasks(p => p.map((x, idx) => idx === i ? e.target.value : x))}
+                  placeholder={`주업무 ${i + 1}`}
+                  className="flex-1 px-3 py-2 text-sm border border-stone-200 dark:border-stone-600 rounded-lg bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none focus:border-amber-400"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 담당 매장 (FC다움) */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">담당 매장 (FC다움)</p>
+            <button onClick={openPicker} className="flex items-center gap-1 text-[11px] font-bold text-orange-500 hover:text-orange-600">
+              <Plus size={11} /> 매장 추가
+            </button>
+          </div>
+          {stores.length === 0 ? (
+            <p className="text-[11px] text-stone-400">등록된 담당 매장이 없습니다.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {stores.map(s => (
+                <span key={s.storeNo} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 text-[11px] font-bold">
+                  <Store size={10} /> {s.storeName}
+                  <button onClick={() => removeStore(s.storeNo)} className="text-orange-400 hover:text-orange-600"><X size={11} /></button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="px-4 py-3 border-t border-stone-100 dark:border-stone-800 flex justify-end">
+        <button onClick={handleSave} disabled={saving}
+          className="flex items-center gap-2 px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-xs font-bold hover:opacity-80 disabled:opacity-50">
+          <Send size={12} /> {saving ? '저장 중…' : '저장'}
+        </button>
+      </div>
+
+      {/* 매장 피커 모달 */}
+      {showPicker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] p-4" onClick={() => setShowPicker(false)}>
+          <div className="bg-white dark:bg-stone-900 rounded-2xl shadow-2xl w-full max-w-md border border-stone-200 dark:border-stone-700 overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-stone-100 dark:border-stone-800">
+              <Store size={14} className="text-orange-500" />
+              <span className="text-sm font-black text-stone-900 dark:text-white">담당 매장 선택</span>
+              <button onClick={() => setShowPicker(false)} className="ml-auto p-1 text-stone-400 hover:text-stone-700"><X size={16} /></button>
+            </div>
+            <div className="px-4 py-2.5 border-b border-stone-100 dark:border-stone-800">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700">
+                <Search size={13} className="text-stone-400 shrink-0" />
+                <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="매장명 · 호수 · 주소 검색"
+                  className="flex-1 bg-transparent text-sm outline-none text-stone-900 dark:text-stone-100 placeholder:text-stone-400" />
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {fcLoading ? (
+                <div className="py-12 text-center text-sm text-stone-400">FC다움 매장 불러오는 중…</div>
+              ) : fcError ? (
+                <div className="py-12 text-center text-sm text-red-500 px-4">{fcError}</div>
+              ) : filtered.length === 0 ? (
+                <div className="py-12 text-center text-sm text-stone-400">{search ? '검색 결과가 없습니다' : '매장이 없습니다'}</div>
+              ) : (
+                <div className="divide-y divide-stone-100 dark:divide-stone-800">
+                  {filtered.map(s => {
+                    const added = stores.some(x => x.storeNo === s.storeNo);
+                    return (
+                      <button key={s.storeNo} onClick={() => added ? removeStore(s.storeNo) : addStore(s)}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-stone-50 dark:hover:bg-stone-800/50">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-stone-900 dark:text-stone-100 truncate">{s.storeNm} <span className="text-stone-400 font-normal">#{s.storeNo}</span></p>
+                          <p className="text-[10px] text-stone-400 truncate">{s.address}</p>
+                        </div>
+                        {added
+                          ? <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">✓ 선택됨</span>
+                          : <Plus size={14} className="text-stone-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="px-4 py-3 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between">
+              <span className="text-[11px] text-stone-400">{stores.length}개 선택됨</span>
+              <button onClick={() => setShowPicker(false)} className="px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-xs font-bold hover:opacity-80">완료</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DailyReportView({ currentUser, onNavigateToReports }: Props) {
   const toast = useToast();
   const isAdmin = currentUser.role === 'admin';
@@ -693,6 +863,9 @@ export function DailyReportView({ currentUser, onNavigateToReports }: Props) {
   const [myStores, setMyStores] = useState<FranchiseSchedule[]>([]);
   const [weeklyReports, setWeeklyReports] = useState<WeeklyReport[]>([]);
   const [myWeekly, setMyWeekly] = useState<WeeklyReport | null>(null);
+  const [workProfiles, setWorkProfiles] = useState<WorkProfile[]>([]);
+  const [myProfile, setMyProfile] = useState<WorkProfile | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [weeklyForm, setWeeklyForm] = useState<WeeklyReportItem[]>([
     { title: '', status: 'planned' }, { title: '', status: 'planned' },
     { title: '', status: 'planned' }, { title: '', status: 'planned' },
@@ -752,6 +925,12 @@ export function DailyReportView({ currentUser, onNavigateToReports }: Props) {
       const myW = me ? wReports.find(r => r.employeeId === me.id) ?? null : null;
       setMyWeekly(myW);
       if (myW) { const wi = myW.items ?? []; setWeeklyForm(wi.length >= 4 ? wi : [...wi, ...Array(4 - wi.length).fill({ title: '', status: 'planned' })]); }
+
+      // 직무 프로필 (고정 주업무 + 담당매장) — 전원 로드(현황 board용) + 내 것
+      const profSnap = await getDocs(collection(salesDb, 'work_profiles'));
+      const profs = profSnap.docs.map(d => d.data() as WorkProfile);
+      setWorkProfiles(profs);
+      setMyProfile(me ? profs.find(p => p.employeeId === me.id) ?? null : null);
 
       // 지난주 미완료 이월 — 이번 주 보고 없을 때만
       if (!myW && me) {
@@ -1005,6 +1184,33 @@ export function DailyReportView({ currentUser, onNavigateToReports }: Props) {
     fetchData();
   };
 
+  /* 직무 프로필 저장 (고정 주업무 + 담당매장) */
+  const saveProfile = async (tasks: string[], stores: AssignedStore[]) => {
+    const empId = myEmployee?.id ?? currentUser.uid;
+    setSavingProfile(true);
+    try {
+      const profile: WorkProfile = {
+        employeeId: empId,
+        employeeName: currentUser.name ?? '',
+        mainTasks: tasks,
+        assignedStores: stores,
+        updatedAt: new Date().toISOString(),
+      };
+      await setDoc(doc(salesDb, 'work_profiles', empId), clean(profile));
+      setMyProfile(profile);
+      setWorkProfiles(prev => {
+        const rest = prev.filter(p => p.employeeId !== empId);
+        return [...rest, profile];
+      });
+      toast.success('주업무·담당 매장이 저장되었습니다');
+    } catch (e) {
+      console.error('saveProfile error:', e);
+      toast.error(`저장 실패: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   const prevDate = () => {
     const d = new Date(date + 'T00:00:00');
     d.setDate(d.getDate() - 1);
@@ -1018,6 +1224,85 @@ export function DailyReportView({ currentUser, onNavigateToReports }: Props) {
   const isToday = date === today();
 
   const getDeptName = (id: string) => departments.find(d => d.id === id)?.name ?? '';
+
+  /* 주간보고 작성 블록 (내 보고 탭에서 사용) */
+  const renderWeeklyAuthoring = () => (
+    <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-2xl overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
+        <div>
+          <p className="text-[11px] font-bold text-stone-400 uppercase tracking-widest">내 주간 업무보고</p>
+          <p className="text-xs text-stone-500 mt-0.5">{getWeekBounds().weekStart} ~ {getWeekBounds().weekEnd} · 매주 최신화</p>
+        </div>
+        {myWeekly && <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0">제출 완료</span>}
+      </div>
+
+      {/* 지난주 미완료 이월 배너 */}
+      {weeklyCarryItems.length > 0 && (
+        <div className="mx-5 mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3.5">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
+              <XCircle size={12} /> 지난주 미완료 {weeklyCarryItems.length}건
+            </p>
+            <button onClick={() => {
+              setWeeklyForm(prev => {
+                const carry = weeklyCarryItems.map(it => ({ ...it, status: 'in_progress' as WeeklyReportItem['status'] }));
+                const existing = prev.filter(it => it.title.trim());
+                const blank = Array(Math.max(0, 4 - carry.length - existing.length)).fill({ title: '', status: 'planned' });
+                return [...carry, ...existing, ...blank].slice(0, Math.max(carry.length + existing.length + 1, 4));
+              });
+              setWeeklyCarryItems([]);
+            }} className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline">
+              이번 주로 가져오기
+            </button>
+          </div>
+          <div className="space-y-1">
+            {weeklyCarryItems.map((it, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs text-stone-600 dark:text-stone-400">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${WEEK_STATUS_CLS[it.status]}`}>{WEEK_STATUS_LABELS[it.status]}</span>
+                <span className="truncate">{it.title}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="px-5 py-4 space-y-4">
+        {weeklyForm.map((item, i) => (
+          <div key={i} className="flex items-start gap-3">
+            <span className="w-6 h-6 rounded-full bg-stone-100 dark:bg-stone-800 flex items-center justify-center text-[11px] font-black text-stone-500 shrink-0 mt-1">{i + 1}</span>
+            <div className="flex-1 space-y-1.5">
+              <input
+                value={item.title}
+                onChange={e => setWeeklyForm(p => p.map((x, idx) => idx === i ? { ...x, title: e.target.value } : x))}
+                placeholder={`굵직한 업무 ${i + 1}`}
+                className="w-full px-3 py-2 text-sm border border-stone-200 dark:border-stone-600 rounded-lg bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none focus:border-stone-500"
+              />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  value={item.detail ?? ''}
+                  onChange={e => setWeeklyForm(p => p.map((x, idx) => idx === i ? { ...x, detail: e.target.value } : x))}
+                  placeholder="상세 내용 (선택)"
+                  className="flex-1 px-3 py-1.5 text-xs border border-stone-200 dark:border-stone-600 rounded-lg bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none focus:border-stone-500"
+                />
+                <select
+                  value={item.status}
+                  onChange={e => setWeeklyForm(p => p.map((x, idx) => idx === i ? { ...x, status: e.target.value as WeeklyReportItem['status'] } : x))}
+                  className="px-2 py-2 text-xs border border-stone-200 dark:border-stone-600 rounded-lg bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none focus:border-stone-500 sm:shrink-0"
+                >
+                  {Object.entries(WEEK_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="px-5 py-3.5 border-t border-stone-100 dark:border-stone-800 flex justify-end">
+        <button onClick={submitWeekly} className="flex items-center gap-2 px-5 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-sm font-bold hover:opacity-80">
+          <Send size={13} /> {myWeekly ? '수정 저장' : '주간보고 제출'}
+        </button>
+      </div>
+    </div>
+  );
 
   /* 팀 현황: 직원별 오늘 보고 상태 */
   const teamStatus = employees.filter(e => e.isActive).map(emp => {
@@ -1074,128 +1359,98 @@ export function DailyReportView({ currentUser, onNavigateToReports }: Props) {
           onRefresh={fetchData}
         />
       ) : tab === 'weekly' ? (
-        /* ── 주간보고 탭 ── */
-        <div className="max-w-xl">
-          {/* 지난주 미완료 이월 배너 */}
-          {weeklyCarryItems.length > 0 && (
-            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                  <XCircle size={12} /> 지난주 미완료 {weeklyCarryItems.length}건
-                </p>
-                <button onClick={() => {
-                  setWeeklyForm(prev => {
-                    const carry = weeklyCarryItems.map(it => ({ ...it, status: 'in_progress' as WeeklyReportItem['status'] }));
-                    const existing = prev.filter(it => it.title.trim());
-                    const blank = Array(Math.max(0, 4 - carry.length - existing.length)).fill({ title: '', status: 'planned' });
-                    return [...carry, ...existing, ...blank].slice(0, Math.max(carry.length + existing.length + 1, 4));
-                  });
-                  setWeeklyCarryItems([]);
-                }} className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline">
-                  이번 주로 가져오기
-                </button>
+        /* ── 주간보고 현황 탭 (전원) ── */
+        (() => {
+          const activeEmps = employees.filter(e => e.isActive);
+          const wrByEmp = new Map(weeklyReports.map(w => [w.employeeId, w]));
+          const profByEmp = new Map(workProfiles.map(p => [p.employeeId, p]));
+          const submitted = activeEmps.filter(e => wrByEmp.has(e.id)).length;
+          return (
+            <div className="max-w-5xl">
+              {/* 요약 스트립 */}
+              <div className="flex items-center gap-3 text-xs flex-wrap mb-4">
+                <span className="font-bold text-stone-500">
+                  주간보고 <span className="text-emerald-600 dark:text-emerald-400">{submitted}</span>/{activeEmps.length}명 제출
+                </span>
+                <span className="text-stone-300">·</span>
+                <span className="font-bold text-stone-500">{getWeekBounds().weekStart} ~ {getWeekBounds().weekEnd}</span>
               </div>
-              <div className="space-y-1">
-                {weeklyCarryItems.map((it, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs text-stone-600 dark:text-stone-400">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${WEEK_STATUS_CLS[it.status]}`}>{WEEK_STATUS_LABELS[it.status]}</span>
-                    <span className="truncate">{it.title}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-2xl overflow-hidden mb-4">
-            <div className="px-6 py-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-bold text-stone-400 uppercase tracking-widest">주간 업무보고</p>
-                <p className="text-xs text-stone-500 mt-0.5">{getWeekBounds().weekStart} ~ {getWeekBounds().weekEnd}</p>
-              </div>
-              {myWeekly && <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">제출 완료</span>}
-            </div>
-            <div className="px-6 py-4 space-y-4">
-              {weeklyForm.map((item, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <span className="w-6 h-6 rounded-full bg-stone-100 dark:bg-stone-800 flex items-center justify-center text-[11px] font-black text-stone-500 shrink-0 mt-1">{i + 1}</span>
-                  <div className="flex-1 space-y-1.5">
-                    <input
-                      value={item.title}
-                      onChange={e => setWeeklyForm(p => p.map((x, idx) => idx === i ? { ...x, title: e.target.value } : x))}
-                      placeholder={`굵직한 업무 ${i + 1}`}
-                      className="w-full px-3 py-2 text-sm border border-stone-200 dark:border-stone-600 rounded-lg bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none focus:border-stone-500"
-                    />
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                      <input
-                        value={item.detail ?? ''}
-                        onChange={e => setWeeklyForm(p => p.map((x, idx) => idx === i ? { ...x, detail: e.target.value } : x))}
-                        placeholder="상세 내용 (선택)"
-                        className="flex-1 px-3 py-1.5 text-xs border border-stone-200 dark:border-stone-600 rounded-lg bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none focus:border-stone-500"
-                      />
-                      <select
-                        value={item.status}
-                        onChange={e => setWeeklyForm(p => p.map((x, idx) => idx === i ? { ...x, status: e.target.value as WeeklyReportItem['status'] } : x))}
-                        className="px-2 py-2 text-xs border border-stone-200 dark:border-stone-600 rounded-lg bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-none focus:border-stone-500 sm:shrink-0"
-                      >
-                        {Object.entries(WEEK_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="px-6 py-4 border-t border-stone-100 dark:border-stone-800 flex justify-end">
-              <button onClick={submitWeekly} className="flex items-center gap-2 px-5 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-sm font-bold hover:opacity-80">
-                <Send size={13} /> {myWeekly ? '수정 저장' : '주간보고 제출'}
-              </button>
-            </div>
-          </div>
 
-          {/* 담당 매장 현황 (SV용) */}
-          {myStores.length > 0 && (
-            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl p-4 mb-4">
-              <p className="text-[11px] font-bold text-stone-400 uppercase tracking-widest mb-3">담당 매장 현황</p>
-              <div className="space-y-2">
-                {myStores.map(s => (
-                  <div key={s.id} className="flex items-start gap-3 text-xs">
-                    <Store size={13} className="text-orange-400 shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-stone-900 dark:text-stone-100">{s.storeName} {s.storeNumber && `(${s.storeNumber}호)`}</p>
-                      <p className="text-stone-400 mt-0.5 flex flex-wrap gap-2">
-                        {s.openDate && <span>오픈 {s.openDate}</span>}
-                        {s.trainingStart && <span>교육 {s.trainingStart}</span>}
-                        {s.constructionEnd && <span>공사완료 {s.constructionEnd}</span>}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+              {activeEmps.length === 0 ? (
+                <p className="text-center py-10 text-stone-400 text-sm">직원 명부에 등록된 직원이 없습니다</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {activeEmps.map(emp => {
+                    const wr = wrByEmp.get(emp.id);
+                    const prof = profByEmp.get(emp.id);
+                    const mainTasks = (prof?.mainTasks ?? []).filter(Boolean);
+                    const stores = prof?.assignedStores ?? [];
+                    return (
+                      <div key={emp.id} className={`bg-white dark:bg-stone-900 border rounded-2xl overflow-hidden ${wr ? 'border-stone-200 dark:border-stone-700' : 'border-dashed border-stone-200 dark:border-stone-700 opacity-70'}`}>
+                        {/* 헤더 */}
+                        <div className="flex items-center gap-3 px-4 py-3 border-b border-stone-100 dark:border-stone-800">
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0 ${wr ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900' : 'bg-stone-100 dark:bg-stone-800 text-stone-400'}`}>
+                            {emp.name[0]}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-black text-stone-900 dark:text-stone-100">{emp.name}</p>
+                            <p className="text-[10px] text-stone-400">{emp.position}{emp.departmentId ? ` · ${getDeptName(emp.departmentId)}` : ''}</p>
+                          </div>
+                          {wr
+                            ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shrink-0">제출 {wr.updatedAt.slice(5, 10)}</span>
+                            : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-300 dark:bg-stone-800 dark:text-stone-600 shrink-0">미제출</span>}
+                        </div>
 
-          {/* 팀 주간보고 목록 (관리자) */}
-          {isAdmin && weeklyReports.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-bold text-stone-500 dark:text-stone-400 mb-2">이번 주 팀 제출 현황 ({weeklyReports.length}명)</p>
-              {weeklyReports.map(wr => (
-                <div key={wr.id} className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl px-4 py-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm font-bold text-stone-900 dark:text-stone-100">{wr.employeeName}</span>
-                    <span className="text-[11px] text-stone-400">{wr.updatedAt.slice(0, 10)}</span>
-                  </div>
-                  <div className="space-y-1">
-                    {wr.items.map((it, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs">
-                        <span className="text-stone-400 font-bold w-4">{i + 1}.</span>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${WEEK_STATUS_CLS[it.status]}`}>{WEEK_STATUS_LABELS[it.status]}</span>
-                        <span className="text-stone-700 dark:text-stone-300 truncate">{it.title}</span>
+                        {/* 고정 주업무 */}
+                        {mainTasks.length > 0 && (
+                          <div className="px-4 pt-3">
+                            <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-1.5 flex items-center gap-1"><Star size={10} /> 주업무</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {mainTasks.map((t, i) => (
+                                <span key={i} className="text-[11px] font-bold text-stone-700 dark:text-stone-300 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-lg">{t}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 담당 매장 */}
+                        {stores.length > 0 && (
+                          <div className="px-4 pt-2.5">
+                            <div className="flex flex-wrap gap-1.5">
+                              {stores.map(s => (
+                                <span key={s.storeNo} className="inline-flex items-center gap-0.5 text-[10px] font-bold text-orange-600 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded">
+                                  <Store size={9} /> {s.storeName}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 이번 주 업무 */}
+                        <div className="px-4 py-3">
+                          <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1.5">이번 주 업무</p>
+                          {wr && wr.items.length > 0 ? (
+                            <div className="space-y-1">
+                              {wr.items.map((it, i) => (
+                                <div key={i} className="flex items-start gap-2 text-xs">
+                                  <span className="text-stone-400 font-bold w-4 shrink-0">{i + 1}.</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${WEEK_STATUS_CLS[it.status]}`}>{WEEK_STATUS_LABELS[it.status]}</span>
+                                  <span className="text-stone-700 dark:text-stone-300 flex-1 leading-snug">{it.title}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-stone-300 dark:text-stone-600">이번 주 주간보고 미제출</p>
+                          )}
+                        </div>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()
       ) : tab === 'my' ? (
         /* ── 내 보고 탭 ── */
         <div className="max-w-5xl space-y-4">
@@ -1441,6 +1696,21 @@ export function DailyReportView({ currentUser, onNavigateToReports }: Props) {
               )}
             </DragOverlay>
           </DndContext>
+
+          {/* ── 내 주간보고 작성 + 주업무/담당매장 ── */}
+          <div className="flex flex-col lg:flex-row gap-4 items-start pt-2">
+            <div className="flex-1 min-w-0 w-full">
+              {renderWeeklyAuthoring()}
+            </div>
+            <div className="w-full lg:w-[360px] shrink-0">
+              <WorkProfilePanel
+                mainTasks={myProfile?.mainTasks ?? []}
+                assignedStores={myProfile?.assignedStores ?? []}
+                onSave={saveProfile}
+                saving={savingProfile}
+              />
+            </div>
+          </div>
         </div>
       ) : tab === 'week' ? (
         /* ── 주간 현황 탭 ── */

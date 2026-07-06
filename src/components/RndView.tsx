@@ -1103,7 +1103,7 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
               </colgroup>
               <thead>
                 <tr>
-                  {['No', '품목명', '구분', '카테고리', '담당자', '시작일', '목표일', '현재 단계', 'D-Day', '진행률', '상태', '남은 공정 / 이슈'].map((h, i) => (
+                  {['No', '품목명', '구분', '카테고리', '담당자', '시작일', '목표일', '현재 단계', 'D-Day', '진행률', '상태', '남은 공정'].map((h, i) => (
                     <th key={i} className={`${printCell} text-left font-bold bg-stone-100`}>{h}</th>
                   ))}
                 </tr>
@@ -1113,7 +1113,6 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
                   const d = item.status !== '완료' ? dday(item.targetDate) : null;
                   const cl = buildChecklist(item);
                   const remain = cl.filter(e => e.stage === item.stage && !e.done).map(e => e.text).join(', ');
-                  const issues = cl.filter(e => e.memo && e.memo.trim()).map(e => `⚑${e.text}:${e.memo}`).join(' ');
                   return (
                     <tr key={item.id}>
                       <td className={printCell}>{idx + 1}</td>
@@ -1127,7 +1126,7 @@ export function RndView({ currentUser: _currentUser }: { currentUser: User }) {
                       <td className={printCell}>{d != null ? fmtDday(d) : ''}</td>
                       <td className={printCell}>{stagePct(item.stage)}%</td>
                       <td className={printCell}>{item.status}</td>
-                      <td className={`${printCell} break-words`}>{remain}{issues ? <span className="text-orange-600 font-black">{`  ${issues}`}</span> : ''}</td>
+                      <td className={`${printCell} break-words`}>{remain}</td>
                     </tr>
                   );
                 })}

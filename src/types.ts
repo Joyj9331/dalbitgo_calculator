@@ -570,6 +570,22 @@ export interface WeeklyReport {
   updatedAt: string;
 }
 
+// 담당 매장 (FC다움 매핑 — storeNo가 전역 고유키, storeId는 브랜드 간 중복)
+export interface AssignedStore {
+  storeNo: number;     // FC다움 storeNo (전역 고유)
+  storeName: string;   // 표시용 (denormalized)
+}
+
+// 직무 프로필 (salesDb: work_profiles/{employeeId})
+// 주업무는 고정, 주간보고는 매주 최신화 — 둘을 분리해 보관
+export interface WorkProfile {
+  employeeId: string;
+  employeeName: string;
+  mainTasks: string[];          // 고정 주업무 (최대 3)
+  assignedStores: AssignedStore[]; // FC다움 담당 매장
+  updatedAt: string;
+}
+
 // ==========================================
 // 공지사항 (salesDb: notices)
 // ==========================================

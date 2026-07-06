@@ -185,6 +185,7 @@ service cloud.firestore {
 
     // OKR/목표
     match /weekly_reports/{docId}      { allow read, write: if isAuthenticated(); }
+    match /work_profiles/{docId}       { allow read, write: if isAuthenticated(); }
     match /okr_quarters/{docId}        { allow read, write: if isAuthenticated(); }
     match /brand_milestones/{docId}    { allow read, write: if isAuthenticated(); }
     match /company_info/{docId}        { allow read: if isAuthenticated(); allow write: if isAdmin(); }

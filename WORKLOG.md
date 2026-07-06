@@ -5,12 +5,23 @@
 
 ---
 
+## 2026-07-06 — Claude Code (2차)
+
+### 주간보고 전원 현황화 + 직무 프로필(주업무·담당매장)
+
+- **배치(사용자 선택)**: 작성=내 보고 / 현황=주간보고. 주간보고 탭 = 전 직원 주간보고 **읽기전용 board**(관리자 전용 해제). 내 보고 탭 하단에 내 주간보고 작성 + 우측 프로필 패널.
+- **직무 프로필**: 새 `WorkProfile`(고정 주업무 최대 3 + 담당매장) → 새 컬렉션 **`work_profiles/{employeeId}`**(salesDb). employees는 관리자만 write라 여기에 못 넣음. weekly_reports는 매주 최신화(기존 유지)로 분리.
+- **담당매장 = FC다움 매핑**: `fetchAllStores` 목록에서 검색·다중선택, **storeNo로 저장**(전역 고유키). 기존 supervisor 이름 매칭(오픈일정용)은 그대로 둠 — 회귀 방지.
+- **⚠️ 배포 후 필수**: `firestore.rules`에 `work_profiles` 매치 1줄 추가함 → **콘솔에서 수동 게시**해야 저장됨(CLI 403). 미게시 시 프로필 저장 permission-denied.
+- 빌드 ✓. DailyReportView.tsx, types.ts, firestore.rules 수정.
+
 ## 2026-07-06 — Claude Code
 
 ### R&D 인쇄 시인성 개선
 
 - **체크시트 인쇄**: 현재 단계 블록 전체를 `border-2 border-black` 박스 + `bg-stone-50` 배경으로 감싸 한눈에 구분(기존엔 헤더 줄만 회색).
-- **이슈사항 주황색**: 체크 항목 메모(`⚑`)를 `text-orange-600 font-black`으로 출력. 관리대장 표 인쇄의 이슈 칸도 동일 처리.
+- **이슈사항 주황색**: 체크 항목 메모(`⚑`)를 `text-orange-600 font-black`으로 출력(품목 상세 체크시트 인쇄).
+- **전체 목록(관리대장) 인쇄는 이슈 제외**: '남은 공정 / 이슈' 열 → '남은 공정'만 출력(이슈 미인쇄). 상세 체크시트 인쇄는 이슈 유지.
 - `#rnd-print-area`에 `print-color-adjust: exact` 이미 있어 인쇄 시 색·박스 배경 유지. 빌드 ✓.
 
 ## 2026-07-04 — Claude Code (종료 요약) ✅
