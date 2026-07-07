@@ -69,6 +69,7 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
   const [adminPwdInput, setAdminPwdInput] = useState('');
   const [actualAdminPwd, setActualAdminPwd] = useState('1234');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('all');
+  const [taskSearch, setTaskSearch] = useState('');
 
   // (debounce 제거 — NoteInput 컴포넌트의 onBlur 저장으로 대체)
 
@@ -132,6 +133,9 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
     });
     return () => unsub();
   }, [selectedStoreId]);
+
+  // 매장 전환 시 이전 매장의 검색어가 남아 헷갈리지 않도록 초기화
+  useEffect(() => { setTaskSearch(''); }, [selectedStoreId]);
 
   // 캘린더에서 매장 선택 시 자동 선택
   useEffect(() => {
@@ -239,12 +243,14 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
 
   // 화면에 실제로 표시할 목록 — 부서 필터 적용
   const unifiedList = useMemo(() => {
-    if (selectedDeptFilter === 'all') return unifiedListAll;
-    return unifiedListAll.filter(i => {
+    let list = selectedDeptFilter === 'all' ? unifiedListAll : unifiedListAll.filter(i => {
       const ids: string[] = i.departmentIds?.length ? i.departmentIds : (i.departmentId ? [i.departmentId] : []);
       return ids.includes(selectedDeptFilter);
     });
-  }, [unifiedListAll, selectedDeptFilter]);
+    const q = taskSearch.trim().toLowerCase();
+    if (q) list = list.filter(i => (i.text ?? '').toLowerCase().includes(q));
+    return list;
+  }, [unifiedListAll, selectedDeptFilter, taskSearch]);
 
   const getStoreData = (store: FranchiseSchedule) => (store as any).checklistData || {};
 
@@ -555,11 +561,28 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
               })}
             </div>
 
+            {/* 테스크 검색 */}
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 print:hidden shrink-0">
+              <Search size={13} className="text-slate-400 shrink-0" />
+              <input
+                type="text"
+                value={taskSearch}
+                onChange={e => setTaskSearch(e.target.value)}
+                placeholder="테스크 검색..."
+                className="flex-1 text-xs bg-transparent text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none"
+              />
+              {taskSearch && (
+                <button onClick={() => setTaskSearch('')} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+
             {/* ── 통합 스크롤 뷰 ── */}
             <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-950 print:overflow-visible print:h-auto p-3 space-y-2">
               {unifiedList.length === 0 ? (
                 <div className="py-20 text-center text-slate-400 font-bold">
-                  {selectedDeptFilter === 'all' ? '등록된 항목이 없습니다.' : '선택한 부서의 항목이 없습니다.'}
+                  {taskSearch ? '검색 결과가 없습니다.' : selectedDeptFilter === 'all' ? '등록된 항목이 없습니다.' : '선택한 부서의 항목이 없습니다.'}
                 </div>
               ) : (
                 unifiedList.map((item) => {

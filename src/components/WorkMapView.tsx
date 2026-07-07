@@ -978,6 +978,7 @@ export function WorkMapView({ currentUser }: { currentUser: User }) {
 
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projectListTab, setProjectListTab] = useState<'active' | 'done'>('active');
+  const [projectSearch, setProjectSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'list' | 'kanban' | 'mindmap' | 'calendar'>('list');
   const [projectDocs, setProjectDocs] = useState<Report[]>([]);
   const [projectFolders, setProjectFolders] = useState<ProjectFolder[]>([]);
@@ -1145,11 +1146,13 @@ export function WorkMapView({ currentUser }: { currentUser: User }) {
 
   // ── 파생 데이터 ───────────────────────────────────────────
   // 활성: active + on_hold / 완료·보관: completed + archived
-  const visibleProjects = projects.filter(p =>
-    projectListTab === 'active'
+  const visibleProjects = projects.filter(p => {
+    const inTab = projectListTab === 'active'
       ? p.status === 'active' || p.status === 'on_hold'
-      : p.status === 'completed' || p.status === 'archived'
-  );
+      : p.status === 'completed' || p.status === 'archived';
+    if (!inTab) return false;
+    return !projectSearch.trim() || p.title.toLowerCase().includes(projectSearch.trim().toLowerCase());
+  });
 
   const filteredTasks = tasks.filter(t => {
     if (selectedProjectId !== null && t.projectId !== selectedProjectId) return false;
@@ -1205,13 +1208,27 @@ export function WorkMapView({ currentUser }: { currentUser: User }) {
               <Plus size={10} />
             </button>
           </div>
-          <div className="flex gap-0.5">
+          <div className="flex gap-0.5 mb-2">
             {(['active', 'done'] as const).map(tab => (
               <button key={tab} onClick={() => setProjectListTab(tab)}
                 className={`flex-1 py-1 text-[10px] font-bold rounded-sm transition-colors ${projectListTab === tab ? 'bg-stone-800 dark:bg-stone-200 text-white dark:text-stone-900' : 'text-stone-500 hover:bg-stone-200 dark:hover:bg-stone-700'}`}>
                 {tab === 'active' ? '진행중' : '완료'}
               </button>
             ))}
+          </div>
+          <div className="flex items-center gap-1.5 bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-sm px-2 py-1">
+            <Search size={11} className="text-stone-400 shrink-0" />
+            <input
+              value={projectSearch}
+              onChange={e => setProjectSearch(e.target.value)}
+              placeholder="프로젝트 검색..."
+              className="flex-1 min-w-0 text-[11px] bg-transparent text-stone-800 dark:text-stone-200 placeholder-stone-400 focus:outline-none"
+            />
+            {projectSearch && (
+              <button onClick={() => setProjectSearch('')} className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 shrink-0">
+                <X size={11} />
+              </button>
+            )}
           </div>
         </div>
 
@@ -1265,7 +1282,7 @@ export function WorkMapView({ currentUser }: { currentUser: User }) {
           {visibleProjects.length === 0 && (
             <div className="px-3 py-5 text-center">
               <p className="text-[10px] text-stone-400">
-                {projectListTab === 'active' ? '진행중인 프로젝트 없음' : '완료된 프로젝트 없음'}
+                {projectSearch ? '검색 결과 없음' : projectListTab === 'active' ? '진행중인 프로젝트 없음' : '완료된 프로젝트 없음'}
               </p>
             </div>
           )}

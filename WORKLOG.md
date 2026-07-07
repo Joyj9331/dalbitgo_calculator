@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-07-07 — Claude Code (web-designer, 조사만·미수정)
+
+### UI 전반 점검(진단만, 코드 변경 없음) — 다음 작업 시 참고
+
+- **높음**: `MeetingView.tsx` "공지로 보내기"(1169행 버튼/1494행 `sendDecisionAsNotice`)가 확인 없이 즉시 전사 공지 발행 — `useConfirm()` 필요(이미 파일에 import됨).
+- **높음**: `MyWorkspaceView.tsx` 메모/할일 편집·삭제 버튼이 `opacity-0 group-hover:opacity-100`(503~521, 638~643행) — 터치 기기에서 hover 없어 접근 어려움. `sm:opacity-0 sm:group-hover:opacity-100`로 모바일 상시노출 권장.
+- **높음**: `franchise/OpenChecklistView.tsx` STATUS_STAGES(44~47행)·D-day 배지(819행)가 다크모드 클래스 전혀 없음 — 체크리스트 매 행마다 보이는 핵심 UI라 다크모드에서 대비 깨짐. 파일 전체는 대체로 dark: 페어링 잘 되어 있어(74/95) 이 두 군데만 국소 수정하면 됨.
+- 중간: `DailyReportView.tsx` "회의 실행항목" 헤더 배지(1633행, `meetingActions.length`)가 "내 것만" 필터(1666행)와 무관하게 전체 개수 표시 — 혼동 소지(치명적 버그는 아님).
+- 상세 내역은 대화 로그 참고. 코드 수정 없음 — 위 항목 착수 시 이 로그부터 확인.
+
 ## 2026-07-07 — Claude Code
 
 ### 오픈일정 체크리스트 버그 3건 + FC다움 QSC 회귀 수정 (배포 완료)
