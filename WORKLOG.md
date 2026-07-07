@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-07-07 — Claude Code (3차)
+
+### 검색기능 2건 추가 (배포 완료) — ⚠️ ProjectsView.tsx는 죽은 코드였음
+
+- **함정 발견**: 사이드바 "프로젝트"는 `ProjectsView.tsx`가 아니라 `WorkMapView.tsx`(`App.tsx:1916`, 주석 "구 업무지도 통합")가 렌더링됨. `ProjectsView.tsx`의 `ProjectsView`/`ProjectDetail` export는 앱 어디서도 안 import됨(죽은 코드, `ProjectMindMap`만 실사용). 처음에 `ProjectsView`에 검색을 넣었다가 사용자가 "안 보인다"고 해서 뒤늦게 발견·되돌림.
+- **WorkMapView(프로젝트) 검색 추가**: 좌측 프로젝트 목록에 제목 검색창 신설 — `search`/`filteredTasks` 상태는 있었지만 실제 입력 UI가 연결 안 돼 있던 걸 확인, 새 `projectSearch` 상태로 별도 구현(기존 미사용 상태는 안 건드림).
+- **OpenChecklistView(오픈일정 체크리스트) 테스크 검색 추가**: 부서 탭 아래 검색창, 매장 전환 시 검색어 자동 초기화.
+- **교훈**: 이 프로젝트엔 `TimelineView`/`ProjectWeekTab` 등 렌더링 안 되는 죽은 컴포넌트가 다수 — 새 기능 추가 전 `grep -rn "<컴포넌트명"`으로 실제 import·렌더 경로부터 확인할 것.
+
 ## 2026-07-07 — Claude Code (web-designer, 조사만·미수정)
 
 ### UI 전반 점검(진단만, 코드 변경 없음) — 다음 작업 시 참고
