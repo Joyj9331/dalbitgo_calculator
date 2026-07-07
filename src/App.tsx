@@ -493,7 +493,7 @@ export default function App() {
   const [noticeUnreadCount, setNoticeUnreadCount] = useState(0);
   const [sidebar, setSidebar] = useState<SidebarState>({
     brandId: null,
-    section: 'home',
+    section: 'my',
     costTab: '수도권',
   });
   const [navHistory, setNavHistory] = useState<SidebarState[]>([]);

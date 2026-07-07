@@ -851,6 +851,7 @@ export function DailyReportView({ currentUser, onNavigateToReports }: Props) {
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [showMeetingPanel, setShowMeetingPanel] = useState(false);
   const [loadingMeetings, setLoadingMeetings] = useState(false);
+  const [onlyMyMeetingActions, setOnlyMyMeetingActions] = useState(false);
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const [date, setDate] = useState(today());
@@ -1659,16 +1660,38 @@ export function DailyReportView({ currentUser, onNavigateToReports }: Props) {
                                 </button>
                               ))}
                             </div>
-                            <p className="px-4 py-1.5 text-[10px] text-stone-400">드래그하거나 + 버튼으로 보고서에 추가</p>
-                            {meetingActions.length === 0 ? (
-                              <div className="px-4 py-5 text-center text-xs text-stone-400">이 회의록에 미완료 실행항목이 없습니다</div>
-                            ) : (
-                              <div className="divide-y divide-stone-100 dark:divide-stone-800">
-                                {meetingActions.map(item => (
-                                  <DraggableMeetingItem key={item.id} item={item} onAdd={addMeetingItemToMorning} />
-                                ))}
-                              </div>
-                            )}
+                            <div className="flex items-center justify-between px-4 py-1.5">
+                              <p className="text-[10px] text-stone-400">드래그하거나 + 버튼으로 보고서에 추가</p>
+                              <button
+                                onClick={() => setOnlyMyMeetingActions(v => !v)}
+                                className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
+                                  onlyMyMeetingActions
+                                    ? 'bg-blue-600 border-blue-600 text-white'
+                                    : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-500 dark:text-stone-400 hover:border-stone-400'
+                                }`}
+                              >
+                                내 것만
+                              </button>
+                            </div>
+                            {(() => {
+                              const visibleActions = onlyMyMeetingActions
+                                ? meetingActions.filter(a => a.assignee === currentUser.name)
+                                : meetingActions;
+                              if (visibleActions.length === 0) {
+                                return (
+                                  <div className="px-4 py-5 text-center text-xs text-stone-400">
+                                    {onlyMyMeetingActions ? '이 회의록에 내 미완료 실행항목이 없습니다' : '이 회의록에 미완료 실행항목이 없습니다'}
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="divide-y divide-stone-100 dark:divide-stone-800">
+                                  {visibleActions.map(item => (
+                                    <DraggableMeetingItem key={item.id} item={item} onAdd={addMeetingItemToMorning} />
+                                  ))}
+                                </div>
+                              );
+                            })()}
                           </>
                         )}
                       </div>

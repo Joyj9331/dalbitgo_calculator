@@ -22,6 +22,17 @@ interface Memo {
   updatedAt: string;
 }
 
+// 개인 단발성 할 일 — 메모(기록)나 내 담당 업무(공식 배정)와는 별개로,
+// 본인이 직접 적고 체크하는 가벼운 일회성 체크리스트
+interface TodoItem {
+  id: string;
+  uid: string;
+  text: string;
+  done: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 function scrub<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(
     Object.entries(obj).filter(([, v]) => v !== undefined)
@@ -30,6 +41,43 @@ function scrub<T extends Record<string, unknown>>(obj: T): T {
 
 function toYMD(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function MiniCalendar({ markedDates }: { markedDates: Set<string> }) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const todayStr = toYMD(now);
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (string | null)[] = Array(firstDay).fill(null);
+  for (let i = 1; i <= daysInMonth; i++) cells.push(toYMD(new Date(year, month, i)));
+
+  return (
+    <div className="px-4 py-3">
+      <p className="text-center text-[11px] font-black text-stone-500 dark:text-stone-400 mb-2">{year}년 {month + 1}월</p>
+      <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-stone-400 mb-1">
+        <span className="text-rose-400">일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span className="text-blue-400">토</span>
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((d, i) => {
+          if (!d) return <div key={i} className="h-7" />;
+          const isToday = d === todayStr;
+          const hasEvent = markedDates.has(d);
+          return (
+            <div key={i} className="h-7 flex flex-col items-center justify-center relative">
+              <span className={`w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-bold ${
+                isToday ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900' : 'text-stone-600 dark:text-stone-300'
+              }`}>
+                {Number(d.slice(-2))}
+              </span>
+              {hasEvent && !isToday && <span className="absolute bottom-0 w-1 h-1 rounded-full bg-blue-400" />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 interface Props {
@@ -46,7 +94,12 @@ export function MyWorkspaceView({ currentUser, onNavigate, onOpenQuickInput }: P
   const [employeeId, setEmployeeId] = useState<string | null | undefined>(undefined);
   const [myTasks, setMyTasks] = useState<Task[]>([]);
   const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([]);
+  const [monthEventDates, setMonthEventDates] = useState<Set<string>>(new Set());
   const [memos, setMemos] = useState<Memo[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [newTodo, setNewTodo] = useState('');
+  const [addingTodo, setAddingTodo] = useState(false);
+  const todoRef = useRef<HTMLInputElement>(null);
   const [todayMorning, setTodayMorning] = useState<boolean | null>(null);
   const [todayEvening, setTodayEvening] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,6 +135,17 @@ export function MyWorkspaceView({ currentUser, onNavigate, onOpenQuickInput }: P
             });
             setMemos(raw);
           })(),
+          (async () => {
+            const snap = await getDocs(
+              query(collection(salesDb, 'personal_todos'), where('uid', '==', currentUser.uid))
+            );
+            const raw = snap.docs.map(d => ({ id: d.id, ...d.data() } as TodoItem));
+            raw.sort((a, b) => {
+              if (a.done !== b.done) return a.done ? 1 : -1;
+              return a.createdAt > b.createdAt ? -1 : 1;
+            });
+            setTodos(raw);
+          })(),
           empId ? (async () => {
             const snap = await getDocs(
               query(collection(salesDb, 'tasks'), where('assigneeId', '==', empId))
@@ -100,13 +164,24 @@ export function MyWorkspaceView({ currentUser, onNavigate, onOpenQuickInput }: P
               query(collection(salesDb, 'calendar_events'),
                 where('startDate', '>=', pastStr), orderBy('startDate'))
             );
-            setTodayEvents(
-              snap.docs.map(d => ({ id: d.id, ...d.data() } as CalendarEvent))
-                .filter(e => e.startDate <= today && e.endDate >= today && (
-                  e.visibility === 'all' || e.visibility === 'team' ||
-                  (empId && e.employeeId === empId)
-                ))
-            );
+            const visibleEvents = snap.docs.map(d => ({ id: d.id, ...d.data() } as CalendarEvent))
+              .filter(e => e.visibility === 'all' || e.visibility === 'team' || (empId && e.employeeId === empId));
+            setTodayEvents(visibleEvents.filter(e => e.startDate <= today && e.endDate >= today));
+
+            // 이번 달 안에서 일정이 있는 날짜만 모아 미니 캘린더 점 표시용으로 사용 (추가 조회 없음)
+            const now = new Date();
+            const monthStart = toYMD(new Date(now.getFullYear(), now.getMonth(), 1));
+            const monthEnd = toYMD(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+            const marked = new Set<string>();
+            visibleEvents.forEach(e => {
+              const start = e.startDate < monthStart ? monthStart : e.startDate;
+              const end = e.endDate > monthEnd ? monthEnd : e.endDate;
+              if (start > end) return;
+              let cur = new Date(start + 'T00:00:00');
+              const endD = new Date(end + 'T00:00:00');
+              while (cur <= endD) { marked.add(toYMD(cur)); cur.setDate(cur.getDate() + 1); }
+            });
+            setMonthEventDates(marked);
           })(),
           empId ? (async () => {
             const snap = await getDocs(
@@ -202,6 +277,45 @@ export function MyWorkspaceView({ currentUser, onNavigate, onOpenQuickInput }: P
       });
     } catch {
       toast.error('업데이트 실패');
+    }
+  };
+
+  // ── 할 일 추가 ────────────────────────────────────────────
+  const handleAddTodo = async () => {
+    const text = newTodo.trim();
+    if (!text) return;
+    const now = new Date().toISOString();
+    try {
+      const ref = await addDoc(collection(salesDb, 'personal_todos'), scrub({
+        uid: currentUser.uid, text, done: false, createdAt: now, updatedAt: now,
+      }));
+      setTodos(prev => [{ id: ref.id, uid: currentUser.uid, text, done: false, createdAt: now, updatedAt: now }, ...prev]);
+      setNewTodo('');
+    } catch {
+      toast.error('할 일 저장 실패');
+    }
+  };
+
+  // ── 할 일 완료 토글 ───────────────────────────────────────
+  const handleToggleTodo = async (todo: TodoItem) => {
+    const done = !todo.done;
+    setTodos(prev => prev.map(t => t.id === todo.id ? { ...t, done } : t)
+      .sort((a, b) => { if (a.done !== b.done) return a.done ? 1 : -1; return a.createdAt > b.createdAt ? -1 : 1; }));
+    try {
+      await updateDoc(doc(salesDb, 'personal_todos', todo.id), { done, updatedAt: new Date().toISOString() });
+    } catch {
+      toast.error('업데이트 실패');
+      setTodos(prev => prev.map(t => t.id === todo.id ? { ...t, done: todo.done } : t));
+    }
+  };
+
+  // ── 할 일 삭제 ────────────────────────────────────────────
+  const handleDeleteTodo = async (todo: TodoItem) => {
+    try {
+      await deleteDoc(doc(salesDb, 'personal_todos', todo.id));
+      setTodos(prev => prev.filter(t => t.id !== todo.id));
+    } catch {
+      toast.error('삭제 실패');
     }
   };
 
@@ -306,7 +420,7 @@ export function MyWorkspaceView({ currentUser, onNavigate, onOpenQuickInput }: P
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* ── 내 메모 ── */}
         <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl overflow-hidden">
@@ -468,6 +582,69 @@ export function MyWorkspaceView({ currentUser, onNavigate, onOpenQuickInput }: P
             ))}
           </div>
         </div>
+
+        {/* ── 할 일 (개인 단발성 체크리스트 — 메모·내 담당 업무와 별개) ── */}
+        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
+            <p className="text-[10px] font-black text-stone-400 tracking-widest uppercase flex items-center gap-1.5">
+              <CheckSquare size={11} /> 할 일
+              {todos.filter(t => !t.done).length > 0 && (
+                <span className="ml-1 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-[9px] font-black px-1.5 py-0.5 rounded-full">{todos.filter(t => !t.done).length}</span>
+              )}
+            </p>
+            <button
+              onClick={() => { setAddingTodo(true); setTimeout(() => todoRef.current?.focus(), 50); }}
+              className="p-1 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-sm transition-colors"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+
+          {addingTodo && (
+            <div className="px-4 pt-3 flex gap-2">
+              <input
+                ref={todoRef}
+                type="text"
+                value={newTodo}
+                onChange={e => setNewTodo(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleAddTodo();
+                  if (e.key === 'Escape') { setAddingTodo(false); setNewTodo(''); }
+                }}
+                onBlur={() => { if (!newTodo.trim()) setAddingTodo(false); }}
+                placeholder="할 일 입력 후 Enter"
+                className="flex-1 text-xs px-3 py-2 border border-stone-300 dark:border-stone-600 rounded-sm bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder-stone-400 focus:outline-none focus:border-stone-600 dark:focus:border-stone-400"
+              />
+            </div>
+          )}
+
+          <div className="divide-y divide-stone-100 dark:divide-stone-800 max-h-72 overflow-y-auto">
+            {todos.length === 0 && !addingTodo && (
+              <div className="px-4 py-8 text-center">
+                <CheckSquare size={24} className="mx-auto text-stone-300 dark:text-stone-600 mb-2" />
+                <p className="text-xs text-stone-400">단발성 할 일이 없습니다. + 버튼으로 추가하세요.</p>
+              </div>
+            )}
+            {todos.map(todo => (
+              <div key={todo.id} className="group flex items-start gap-2 px-4 py-2.5 hover:bg-stone-50 dark:hover:bg-stone-800/50">
+                <button
+                  onClick={() => handleToggleTodo(todo)}
+                  className="mt-0.5 shrink-0 text-stone-300 dark:text-stone-600 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors"
+                  title={todo.done ? '완료 취소' : '완료 처리'}
+                >
+                  {todo.done ? <CheckSquare size={14} className="text-emerald-500" /> : <Square size={14} />}
+                </button>
+                <p className={`flex-1 text-xs ${todo.done ? 'line-through text-stone-400' : 'text-stone-800 dark:text-stone-200'}`}>{todo.text}</p>
+                <button
+                  onClick={() => handleDeleteTodo(todo)}
+                  className="shrink-0 opacity-0 group-hover:opacity-100 text-stone-400 hover:text-rose-500 transition-colors"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* ── 오늘 일정 (항상 표시) ── */}
@@ -481,9 +658,10 @@ export function MyWorkspaceView({ currentUser, onNavigate, onOpenQuickInput }: P
           </button>
         </div>
         {todayEvents.length === 0 ? (
-          <div className="px-4 py-6 text-center">
-            <p className="text-xs text-stone-400">오늘 일정이 없습니다.</p>
-          </div>
+          <>
+            <MiniCalendar markedDates={monthEventDates} />
+            <p className="px-4 pb-4 text-center text-xs text-stone-400">오늘 일정이 없습니다.</p>
+          </>
         ) : (
           <div className="divide-y divide-stone-100 dark:divide-stone-800">
             {todayEvents.map(evt => (

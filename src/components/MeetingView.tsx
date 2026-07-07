@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { salesDb as db, salesDb } from '../firebase';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, orderBy, query, where,
+  collection, getDocs, doc, setDoc, deleteDoc, orderBy, query, where, runTransaction,
 } from 'firebase/firestore';
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -32,7 +32,7 @@ interface Agenda {
   assignee?: string; ref?: string; deadline?: string; urgency?: string; note?: string;
 }
 type DecisionImportance = 'important' | 'normal' | 'reference';
-interface Decision { id: string; text: string; importance: DecisionImportance }
+interface Decision { id: string; text: string; importance: DecisionImportance; sentAsNotice?: boolean }
 interface ActionItem { id: string; text: string; assignee?: string; deadline?: string; done: boolean }
 interface MeetingTemplate { id: string; name: string; agendas: Omit<Agenda, 'id'>[] }
 
@@ -420,11 +420,12 @@ function TemplateManagerModal({ templates, onClose, onSave }: {
 }
 
 /* ─── Meeting Form ───────────────────────────────────────────────────────── */
-function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCancel, currentUser, onValidationError, onTemplatesChange }: {
+function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCancel, currentUser, onValidationError, onTemplatesChange, onCarryActionItem }: {
   initial?: Meeting; prevMeeting?: Meeting | null; employees: Employee[];
   templates: MeetingTemplate[]; onSave: (m: Meeting) => void; onCancel: () => void;
   currentUser: User; onValidationError: (msg: string) => void;
   onTemplatesChange: (t: MeetingTemplate[]) => void;
+  onCarryActionItem?: (prevMeetingId: string, actionItemId: string) => void;
 }) {
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   const [title, setTitle] = useState(initial?.title || '');
@@ -479,7 +480,7 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
     if (!prevMeeting?.agendas) return;
     const a = prevMeeting.agendas[i];
     setAgendas(prev => [...prev, {
-      id: genId(), title: '[이월] ' + a.title,
+      id: genId(), title: a.title,
       checklist: (a.checklist || []).map(c => ({ text: c.text, done: false, assignee: c.assignee || '' })),
       progress: 0, assignee: a.assignee, ref: a.ref, deadline: a.deadline, urgency: a.urgency, note: a.note,
     }]);
@@ -492,13 +493,15 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
   };
 
   const carryDecision = (d: Decision) => {
-    setDecisions(prev => [...prev, { ...d, id: genId(), text: '[이월] ' + d.text }]);
+    setDecisions(prev => [...prev, { ...d, id: genId(), sentAsNotice: false }]);
     setCarriedDecisionIds(prev => new Set([...prev, d.id]));
   };
 
   const carryActionItem = (a: ActionItem) => {
-    setActionItems(prev => [...prev, { ...a, id: genId(), text: '[이월] ' + a.text, done: false }]);
+    setActionItems(prev => [...prev, { ...a, id: genId(), done: false }]);
     setCarriedActionIds(prev => new Set([...prev, a.id]));
+    // 이월 원본은 완료 처리 — 업무보고 등 집계 화면에서 같은 항목이 중복으로 안 잡히게 함
+    if (prevMeeting) onCarryActionItem?.(prevMeeting.id, a.id);
   };
 
   const carryAllActionItems = () => {
@@ -942,11 +945,12 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
 }
 
 /* ─── Meeting Detail ─────────────────────────────────────────────────────── */
-function MeetingDetail({ meeting, onBack, onEdit, onDelete, onToggleCheck, onToggleActionItem, onToggleItem, currentUser }: {
+function MeetingDetail({ meeting, onBack, onEdit, onDelete, onToggleCheck, onToggleActionItem, onToggleItem, onSendDecisionNotice, currentUser }: {
   meeting: Meeting; onBack: () => void; onEdit: () => void; onDelete: () => void;
   onToggleCheck: (agIdx: number, checkIdx: number) => void;
   onToggleActionItem: (itemIdx: number) => void;
   onToggleItem?: (itemId: string) => void;
+  onSendDecisionNotice?: (decisionId: string) => void;
   currentUser: User;
 }) {
   const ags = meeting.agendas || [];
@@ -1159,6 +1163,16 @@ function MeetingDetail({ meeting, onBack, onEdit, onDelete, onToggleCheck, onTog
                 <span className="text-[11px] font-bold text-stone-400 w-4 shrink-0 mt-1">{i + 1}</span>
                 <ImportanceBadge importance={d.importance} />
                 <span className="flex-1 text-sm text-stone-800 dark:text-stone-200">{d.text}</span>
+                {d.sentAsNotice ? (
+                  <span className="shrink-0 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 print:hidden"><Check size={11} /> 공지됨</span>
+                ) : (
+                  <button
+                    onClick={() => onSendDecisionNotice?.(d.id)}
+                    className="shrink-0 text-[10px] font-bold text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 border border-stone-300 dark:border-stone-600 px-2 py-0.5 rounded transition-colors print:hidden"
+                  >
+                    공지로 보내기
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -1450,12 +1464,63 @@ export function MeetingView({ currentUserName, currentUser }: { currentUserName:
     await setDoc(doc(db, 'meetings', meeting.id), updated);
   };
 
+  // 이월 시 이전 회의록의 원본 실행항목을 완료 처리 (중복 집계 방지)
+  // 전체 이월 시 여러 항목이 같은 회의록에 연속으로 기록될 수 있어 트랜잭션으로 안전하게 처리
+  const markActionItemDone = async (meetingId: string, actionItemId: string) => {
+    try {
+      const ref = doc(db, 'meetings', meetingId);
+      await runTransaction(db, async tx => {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) return;
+        const data = snap.data() as Meeting;
+        if (!data.actionItems) return;
+        const actionItems = data.actionItems.map(a => a.id === actionItemId ? { ...a, done: true } : a);
+        tx.update(ref, { actionItems, updatedAt: new Date().toISOString() });
+      });
+      setMeetings(prev => prev.map(m => m.id !== meetingId || !m.actionItems ? m : {
+        ...m, actionItems: m.actionItems.map(a => a.id === actionItemId ? { ...a, done: true } : a),
+      }));
+    } catch (e) { console.error('이월 원본 완료 처리 실패', e); }
+  };
+
   const toggleItem = async (meeting: Meeting, itemId: string) => {
     if (!meeting.items) return;
     const items = meeting.items.map(i => i.id === itemId ? { ...i, done: !i.done } : i);
     const updated = scrub({ ...meeting, items, updatedAt: new Date().toISOString() });
     setMeetings(prev => prev.map(m => m.id === meeting.id ? updated : m));
     await setDoc(doc(db, 'meetings', meeting.id), updated);
+  };
+
+  // 결정사항 → 공지사항 등록
+  const sendDecisionAsNotice = async (meeting: Meeting, decisionId: string) => {
+    const decision = meeting.decisions?.find(d => d.id === decisionId);
+    if (!decision || decision.sentAsNotice) return;
+    try {
+      const now = new Date().toISOString();
+      const noticeId = `notice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await setDoc(doc(db, 'notices', noticeId), {
+        id: noticeId,
+        title: `[회의 결정] ${meeting.title}`,
+        content: decision.text,
+        category: '전체공지',
+        authorId: currentUser.uid,
+        authorName: currentUser.name,
+        isPinned: false,
+        targetDeptIds: [],
+        attachments: [],
+        isArchived: false,
+        readBy: { [currentUser.uid]: { name: currentUser.name, readAt: now } },
+        createdAt: now, updatedAt: now,
+      });
+      const decisions = (meeting.decisions || []).map(d => d.id === decisionId ? { ...d, sentAsNotice: true } : d);
+      const updated = scrub({ ...meeting, decisions, updatedAt: now });
+      setMeetings(prev => prev.map(m => m.id === meeting.id ? updated : m));
+      await setDoc(doc(db, 'meetings', meeting.id), updated);
+      toast.success('공지사항에 등록되었습니다');
+    } catch (e) {
+      console.error(e);
+      toast.error('공지 등록에 실패했습니다');
+    }
   };
 
   const sorted = [...meetings].sort((a, b) => b.date > a.date ? 1 : -1);
@@ -1528,6 +1593,7 @@ export function MeetingView({ currentUserName, currentUser }: { currentUserName:
           currentUser={currentUser}
           onValidationError={msg => toast.error(msg)}
           onTemplatesChange={t => setTemplates(t)}
+          onCarryActionItem={markActionItemDone}
         />
       </div>
     );
@@ -1549,6 +1615,7 @@ export function MeetingView({ currentUserName, currentUser }: { currentUserName:
         onToggleCheck={(agIdx, checkIdx) => toggleCheck(selected, agIdx, checkIdx)}
         onToggleActionItem={itemIdx => toggleActionItem(selected, itemIdx)}
         onToggleItem={itemId => toggleItem(selected, itemId)}
+        onSendDecisionNotice={decisionId => sendDecisionAsNotice(selected, decisionId)}
         currentUser={currentUser}
       />
     </div>
