@@ -256,12 +256,29 @@ export function FranchiseScheduleView({ brandId, currentUser, isReadOnly = false
         const missingSystem = SYSTEM_CONSTRUCTION_IDS.filter(id => !items.find(i => i.id === id));
         if (missingSystem.length > 0) needsSystemMigration = true;
 
+        // 3차 마이그레이션: systemAction 누락 백필 (1차 마이그레이션이 이 필드가
+        // 도입되기 전에 이미 실행된 브랜드는 item_18/16/24에 태그가 없을 수 있음)
+        const SYSTEM_ACTION_BACKFILL: Record<string, SystemActionType> = {
+          item_18: 'drawing_upload',
+          item_16: 'pre_training_pay',
+          item_24: 'owner_guide_sync',
+        };
+        const needsActionBackfill = items.some(i =>
+          SYSTEM_ACTION_BACKFILL[i.id] && i.systemAction !== SYSTEM_ACTION_BACKFILL[i.id]
+        );
+        if (needsActionBackfill) needsSystemMigration = true;
+
         if (needsSystemMigration && !cancelled) {
-          let updatedItems = items.map(i =>
-            SYSTEM_CONSTRUCTION_IDS.includes(i.id)
-              ? { ...i, isSystem: true, text: SYSTEM_LABELS[i.id] }
-              : i
-          );
+          let updatedItems = items.map(i => {
+            let next = i;
+            if (SYSTEM_CONSTRUCTION_IDS.includes(i.id)) {
+              next = { ...next, isSystem: true, text: SYSTEM_LABELS[i.id] };
+            }
+            if (SYSTEM_ACTION_BACKFILL[i.id] && i.systemAction !== SYSTEM_ACTION_BACKFILL[i.id]) {
+              next = { ...next, systemAction: SYSTEM_ACTION_BACKFILL[i.id] };
+            }
+            return next;
+          });
           // 없는 시스템 항목 추가 (맨 앞에)
           missingSystem.forEach(id => {
             const schField = id === 'sch_constructionStart' ? 'constructionStart' : 'constructionEnd';

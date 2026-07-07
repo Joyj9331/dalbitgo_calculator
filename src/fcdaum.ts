@@ -173,29 +173,32 @@ export async function fetchQscReports(storeIds?: string[], pageSize = 50): Promi
 }
 
 // ── 브랜드 전체 1회 조회 (FC다움 권고, 2026-07) ────────────────────────────────
-// FC다움 개발팀 안내: 품질관리 리포트 목록 API는 storeIds를 "입력하지 않고" 1회 호출하면
-// 브랜드 내 전체 매장 리포트를 한 번에 받는다. 매장별 단건 전수 조회(약 84콜/스윕)는
-// "동일 호출을 계속 반복 → 외부 공격 의심"을 유발하므로 폐기하고 이 경로로 전환한다.
+// FC다움 개발팀 안내: 품질관리 리포트 목록 API는 storeIds를 "입력하지 않고" 조회하면
+// 브랜드 내 전체 매장 리포트를 받는다. 매장별 단건 전수 조회(약 84콜/스윕)는
+// "동일 호출을 계속 반복 → 외부 공격 의심"을 유발하므로 폐기하고 이 경로로 전환했다.
 //
-// 안전 설계: storeIds 없이 조회하되, 혹시 서버가 페이지당 응답 건수를 제한할 경우를 대비해
-// page를 1씩 올리며 reportNo로 중복 제거한다. 새 페이지가 "새 리포트를 0건 추가"하면 종료 —
-//   · 페이징 지원  → 마지막 페이지 다음이 빈 페이지가 되어 전부 수집
-//   · 페이징 미지원 → 매 요청이 같은 결과를 반환 → 2번째 요청에서 added=0 → 안전하게 수렴
-// 따라서 실제 호출은 1~수 콜에 그친다(브랜드 리포트 총량에 비례).
-// ⚠️ page 파라미터명은 FC다움 문서로 확정하지 못했다. 다른 이름이면 첫 페이지 결과만 반복되어
-//    2콜로 수렴하되 서버 cap 밖의 오래된 리포트는 누락될 수 있다 → 프리뷰 배포에서 매장별
-//    최신 리포트 커버리지를 반드시 검증할 것(WORKLOG 참조).
-const QSC_ALL_PAGE_SIZE = 500;
-const QSC_ALL_MAX_PAGES = 30; // 무한 루프 방지 안전장치
+// ⚠️ 2026-07-07 실서버 직접 호출로 확인(회귀 버그 발견·수정): pageSize·page는 완전히
+// 무시되고 매번 "최신 10건"만 돌아온다(브랜드 리포트 총 123건 중 10건, page=1과 page=2가
+// 바이트 단위로 동일). 그 결과 상위 10위 안에 없는 매장은 실제 점검을 했어도 며칠이 지나도
+// 절대 해소되지 않는 "미확인" 오분류가 재발하고 있었다 — storeIds 다건 조회 때와 동일한 cap이
+// storeIds 생략 시에도 그대로 걸린다는 뜻.
+//
+// 검증된 대안: `to`(visitDate 상한, epoch ms)는 실제로 먹는 날짜 필터다. 응답의 totalCount도
+// to 필터에 맞춰 정확히 줄어드는 것까지 대조 확인했다. 그래서 이전 배치의 최소 visitDate-1을
+// 다음 to로 넘기며 시간 역순으로 훑어 전량을 모은다. storeIds는 여전히 생략하므로 "매장별
+// 반복 호출 금지" 요청에는 위배되지 않는다 — 호출 횟수는 매장 수(84)가 아니라 리포트
+// 총량/10에 비례한다(현재 기준 약 13콜/스윕).
+const QSC_ALL_PAGE_SIZE = 500; // 서버가 무시하지만 하위호환을 위해 유지
+const QSC_ALL_MAX_PAGES = 60; // 무한 루프 방지 안전장치 (리포트 총량 증가에 대비한 여유)
 
 export async function fetchQscReportsAll(): Promise<FcdaumQscReport[]> {
   const seen = new Set<number>();
   const all: FcdaumQscReport[] = [];
-  for (let page = 1; page <= QSC_ALL_MAX_PAGES; page++) {
-    const data = await apiFetch('qsc/report', {
-      pageSize: String(QSC_ALL_PAGE_SIZE),
-      page: String(page),
-    });
+  let to: number | undefined;
+  for (let i = 0; i < QSC_ALL_MAX_PAGES; i++) {
+    const params: Record<string, string> = { pageSize: String(QSC_ALL_PAGE_SIZE) };
+    if (to !== undefined) params['to'] = String(to);
+    const data = await apiFetch('qsc/report', params);
     const batch: FcdaumQscReport[] = (data.qscReports ?? []).map((r: FcdaumQscReport) => ({
       ...r,
       visitDate: toMs(r.visitDate),
@@ -203,13 +206,15 @@ export async function fetchQscReportsAll(): Promise<FcdaumQscReport[]> {
     }));
     if (batch.length === 0) break;
     let added = 0;
+    let minVisit = Infinity;
     for (const r of batch) {
       if (!seen.has(r.reportNo)) { seen.add(r.reportNo); all.push(r); added++; }
+      if (r.visitDate < minVisit) minVisit = r.visitDate;
     }
-    // added===0 → 빈 페이지이거나(끝) 페이징 미지원으로 같은 결과 반복 → 종료.
-    // batch.length<pageSize로 판단하지 않는다: 서버가 pageSize를 요청값보다 작게 cap하면
-    // 첫 페이지에서 조기 종료되어 뒤 페이지를 통째로 놓칠 수 있기 때문.
+    // added===0 → 이번 창에서 새 리포트가 하나도 없음(끝에 도달, 또는 응답이 반복됨) → 종료.
     if (added === 0) break;
+    // 다음 호출은 이번 배치의 가장 오래된 방문일 "이전"만 받도록 상한을 내린다(경계 중복 방지).
+    to = minVisit - 1;
   }
   return all;
 }

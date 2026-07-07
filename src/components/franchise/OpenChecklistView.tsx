@@ -182,8 +182,8 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
     });
   const selectedStore = schedules?.find(s => s.id === selectedStoreId);
 
-  //   모든 항목을 하나의 리스트로 통합 및 정렬
-  const unifiedList = useMemo(() => {
+  //   모든 항목을 하나의 리스트로 통합 및 정렬 (부서 필터 적용 전 — 탭 배지 집계용)
+  const unifiedListAll = useMemo(() => {
     if (!selectedStore) return [];
     
     const items: any[] = [];
@@ -234,12 +234,17 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
     });
 
     // 날짜로 정렬하지 않음 — 원래 등록 순서(order) 유지, 날짜는 참고 표기
-    return items.filter(i => {
-      if (selectedDeptFilter === 'all') return true;
+    return items;
+  }, [selectedStore, activeChecklist, activeScheduleDates, activeTaskItems, storeTasks]);
+
+  // 화면에 실제로 표시할 목록 — 부서 필터 적용
+  const unifiedList = useMemo(() => {
+    if (selectedDeptFilter === 'all') return unifiedListAll;
+    return unifiedListAll.filter(i => {
       const ids: string[] = i.departmentIds?.length ? i.departmentIds : (i.departmentId ? [i.departmentId] : []);
       return ids.includes(selectedDeptFilter);
     });
-  }, [selectedStore, activeChecklist, activeScheduleDates, activeTaskItems, selectedDeptFilter, storeTasks]);
+  }, [unifiedListAll, selectedDeptFilter]);
 
   const getStoreData = (store: FranchiseSchedule) => (store as any).checklistData || {};
 
@@ -523,7 +528,7 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
               {(() => {
                 // 전체 탭 미완료 수
                 const storeData = getStoreData(selectedStore);
-                const totalIncomplete = unifiedList.filter(i =>
+                const totalIncomplete = unifiedListAll.filter(i =>
                   i.uType !== 'date' && (i.uStatus ?? storeData[i.id]?.status ?? 0) < 3
                 ).length;
                 return (
@@ -535,7 +540,7 @@ export function OpenChecklistView({ schedules, currentUser, processSettings, ini
               })()}
               {dbDepartments.map(dept => {
                 const storeData = getStoreData(selectedStore);
-                const deptItems = unifiedList.filter(i => {
+                const deptItems = unifiedListAll.filter(i => {
                   if (i.uType === 'date') return false;
                   const ids: string[] = i.departmentIds?.length ? i.departmentIds : (i.departmentId ? [i.departmentId] : []);
                   return ids.includes(dept.id);
