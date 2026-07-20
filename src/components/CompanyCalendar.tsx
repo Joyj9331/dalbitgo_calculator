@@ -161,7 +161,8 @@ export function CompanyCalendar({ currentUser }: Props) {
       const endDate = new Date(year, month + 1, 0);
       const endStr = toYMD(endDate);
 
-      const [evtSnap, leaveSnap, empSnap, meetingSnap, dailySnap, weeklySnap] = await Promise.all([
+      const queryLabels = ['calendar_events', 'leave_requests', 'employees', 'meetings', 'daily_reports', 'weekly_reports'];
+      const results = await Promise.allSettled([
         getDocs(query(collection(salesDb, 'calendar_events'),
           where('startDate', '<=', endStr), orderBy('startDate'))),
         getDocs(query(collection(salesDb, 'leave_requests'), orderBy('startDate', 'desc'))),
@@ -171,13 +172,19 @@ export function CompanyCalendar({ currentUser }: Props) {
           where('date', '>=', startStr), where('date', '<=', endStr), where('type', '==', 'morning'))),
         getDocs(query(collection(salesDb, 'weekly_reports'), where('weekStart', '<=', endStr))),
       ]);
+      // 쿼리 하나(예: 인덱스 누락)가 실패해도 나머지는 정상 표시되도록 개별 처리 — Promise.all은 하나만 실패해도 전체가 무너짐
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') console.error(`Calendar fetchData [${queryLabels[i]}] error:`, r.reason);
+      });
+      const docsOf = (r: PromiseSettledResult<{ docs: any[] }>) => r.status === 'fulfilled' ? r.value.docs : [];
+      const [evtDocs, leaveDocs, empDocs, meetingDocs, dailyDocs, weeklyDocs] = results.map(docsOf);
 
       /* 캘린더 이벤트 */
-      const calEvents = evtSnap.docs.map(d => ({ id: d.id, ...d.data() } as CalendarEvent))
+      const calEvents = evtDocs.map(d => ({ id: d.id, ...d.data() } as CalendarEvent))
         .filter(e => e.endDate >= startStr);
 
       /* 회의록 → 가상 이벤트 (저장 안 함, 표시만) */
-      const meetingEvents: CalendarEvent[] = meetingSnap.docs
+      const meetingEvents: CalendarEvent[] = meetingDocs
         .map(d => d.data() as { id: string; title: string; date: string })
         .filter(m => m.date >= startStr && m.date <= endStr)
         .map(m => ({
@@ -192,7 +199,7 @@ export function CompanyCalendar({ currentUser }: Props) {
 
       /* 일일보고 → 날짜별 그룹으로 가상 이벤트 */
       const dailyByDate: Record<string, number> = {};
-      dailySnap.docs.forEach(d => {
+      dailyDocs.forEach(d => {
         const r = d.data() as DailyReport;
         dailyByDate[r.date] = (dailyByDate[r.date] || 0) + 1;
       });
@@ -208,7 +215,7 @@ export function CompanyCalendar({ currentUser }: Props) {
 
       /* 주간보고 → 주차별 그룹으로 가상 이벤트 */
       const weeklyByWeek: Record<string, { weekStart: string; weekEnd: string; count: number }> = {};
-      weeklySnap.docs.forEach(d => {
+      weeklyDocs.forEach(d => {
         const r = d.data() as WeeklyReport;
         if (r.weekEnd < startStr) return;
         if (!weeklyByWeek[r.weekStart]) {
@@ -228,10 +235,10 @@ export function CompanyCalendar({ currentUser }: Props) {
 
       setEvents([...calEvents, ...meetingEvents, ...dailyEvents, ...weeklyEvents]);
 
-      const allLeave = leaveSnap.docs.map(d => ({ id: d.id, ...d.data() } as LeaveRequest));
+      const allLeave = leaveDocs.map(d => ({ id: d.id, ...d.data() } as LeaveRequest));
       setLeaveRequests(allLeave);
 
-      const emps = empSnap.docs.map(d => ({ id: d.id, ...d.data() } as Employee));
+      const emps = empDocs.map(d => ({ id: d.id, ...d.data() } as Employee));
       setEmployees(emps);
       setMyEmployee(emps.find(e => e.linkedUid === currentUser.uid) ?? null);
     } catch (e) {
