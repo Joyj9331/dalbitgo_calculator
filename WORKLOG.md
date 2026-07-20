@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-07-20 — Claude Code
+
+### 전사 캘린더 "개인 일정 등록해도 안 보임" 버그 — 진짜 원인은 Promise.all 전체실패 (배포 완료)
+
+- **1차 수정(불충분)**: 개인 탭 필터가 `visibility==='private'`만 걸렀는데 등록 폼 기본값은 `visibility:'all'`이라 안 보였음 → `type==='personal'` 기준으로 변경(`b213464`). 이걸로도 안 고쳐짐.
+- **진짜 원인**: `fetchData()`가 6개 쿼리를 `Promise.all`로 묶었는데 `daily_reports` 쿼리가 복합 인덱스 누락으로 항상 reject → 캘린더 전체(일정·연차·직원명부)가 매번 조용히 로드 실패. 브라우저 콘솔(F12)에서 확인.
+- **수정**: `Promise.all` → `Promise.allSettled`로 개별 쿼리 실패 격리(`6b2adef`). 사용자 요청으로 `weekly_reports` 쿼리·가상이벤트 자체를 제거해 쿼리 수도 축소(`7d7e9f2`).
+- **미해결**: `daily_reports` 복합 인덱스는 콘솔에서 사람이 직접 생성해야 함(에러 메시지의 링크). 안 하면 "일일보고 N명" 표시만 계속 안 뜸(다른 데이터엔 영향 없음).
+- 교훈(메모리 저장함): "저장은 되는데 안 보임" 증상은 tab 필터 로직보다 F12 콘솔부터 볼 것 — `Promise.all` 패턴은 쿼리 하나의 인덱스/권한 문제가 전체를 무너뜨림.
+
+### 소유권 인수인계 체크리스트 정리 (`OWNERSHIP_HANDOVER.md`, 코드 변경 없음)
+
+- GitHub 이전은 이미 완료(`saemoyangfnb/saemoyangfms`)로 확인·문서 정정. Firebase는 프로젝트 1개(DB 2개)라 소유자 등록 1회면 충분하다고 정정.
+- Vercel 소유권은 로컬 `.vercel` 링크가 stale이라 판단 근거로 못 씀 — 대시보드 직접 확인 필요 항목으로 남김.
+- `firestore.rules`의 `isAdmin()` 등 4곳에 관리자 이메일 하드코딩 발견·보고. 사용자 확인: `saemoyang_official@naver.com`이 이미 등록된 회사 관리자 계정이라 코드 수정 불필요, 현행 유지.
+
+---
+
 ## 2026-07-07 — Claude Code (3차)
 
 ### 검색기능 2건 추가 (배포 완료) — ⚠️ ProjectsView.tsx는 죽은 코드였음
