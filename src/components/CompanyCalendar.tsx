@@ -421,7 +421,7 @@ export function CompanyCalendar({ currentUser }: Props) {
     if (view === 'personal') {
       return events.filter(e =>
         e.startDate <= ymd && e.endDate >= ymd &&
-        e.visibility === 'private' && e.employeeId === myEmployee?.id
+        e.type === 'personal' && e.employeeId === myEmployee?.id
       );
     }
     // 전체 (all)
