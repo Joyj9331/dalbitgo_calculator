@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { salesDb } from '../firebase';
 import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, orderBy, onSnapshot, getDoc } from 'firebase/firestore';
-import { CalendarEvent, CalendarEventType, LeaveRequest, LeaveType, LeaveStatus, Employee, User, CalendarRoutine, FranchiseSchedule, WorkItem, Task, TaskStatus, DailyReport, WeeklyReport } from '../types';
+import { CalendarEvent, CalendarEventType, LeaveRequest, LeaveType, LeaveStatus, Employee, User, CalendarRoutine, FranchiseSchedule, WorkItem, Task, TaskStatus, DailyReport } from '../types';
 import { useToast } from './Toast';
 import { useConfirm } from './ConfirmModal';
 import { Plus, ChevronLeft, ChevronRight, X, Check, Calendar, Clock, RefreshCw, Repeat, Trash2, Edit2, CheckSquare } from 'lucide-react';
@@ -161,7 +161,7 @@ export function CompanyCalendar({ currentUser }: Props) {
       const endDate = new Date(year, month + 1, 0);
       const endStr = toYMD(endDate);
 
-      const queryLabels = ['calendar_events', 'leave_requests', 'employees', 'meetings', 'daily_reports', 'weekly_reports'];
+      const queryLabels = ['calendar_events', 'leave_requests', 'employees', 'meetings', 'daily_reports'];
       const results = await Promise.allSettled([
         getDocs(query(collection(salesDb, 'calendar_events'),
           where('startDate', '<=', endStr), orderBy('startDate'))),
@@ -170,14 +170,13 @@ export function CompanyCalendar({ currentUser }: Props) {
         getDocs(collection(salesDb, 'meetings')),
         getDocs(query(collection(salesDb, 'daily_reports'),
           where('date', '>=', startStr), where('date', '<=', endStr), where('type', '==', 'morning'))),
-        getDocs(query(collection(salesDb, 'weekly_reports'), where('weekStart', '<=', endStr))),
       ]);
       // 쿼리 하나(예: 인덱스 누락)가 실패해도 나머지는 정상 표시되도록 개별 처리 — Promise.all은 하나만 실패해도 전체가 무너짐
       results.forEach((r, i) => {
         if (r.status === 'rejected') console.error(`Calendar fetchData [${queryLabels[i]}] error:`, r.reason);
       });
       const docsOf = (r: PromiseSettledResult<{ docs: any[] }>) => r.status === 'fulfilled' ? r.value.docs : [];
-      const [evtDocs, leaveDocs, empDocs, meetingDocs, dailyDocs, weeklyDocs] = results.map(docsOf);
+      const [evtDocs, leaveDocs, empDocs, meetingDocs, dailyDocs] = results.map(docsOf);
 
       /* 캘린더 이벤트 */
       const calEvents = evtDocs.map(d => ({ id: d.id, ...d.data() } as CalendarEvent))
@@ -213,27 +212,7 @@ export function CompanyCalendar({ currentUser }: Props) {
         createdAt: '', updatedAt: '',
       }));
 
-      /* 주간보고 → 주차별 그룹으로 가상 이벤트 */
-      const weeklyByWeek: Record<string, { weekStart: string; weekEnd: string; count: number }> = {};
-      weeklyDocs.forEach(d => {
-        const r = d.data() as WeeklyReport;
-        if (r.weekEnd < startStr) return;
-        if (!weeklyByWeek[r.weekStart]) {
-          weeklyByWeek[r.weekStart] = { weekStart: r.weekStart, weekEnd: r.weekEnd, count: 0 };
-        }
-        weeklyByWeek[r.weekStart].count++;
-      });
-      const weeklyEvents: CalendarEvent[] = Object.values(weeklyByWeek).map(({ weekStart, weekEnd, count }) => ({
-        id: `weekly_${weekStart}`,
-        type: 'weekly_report' as CalendarEventType,
-        title: `📊 주간보고 ${count}명`,
-        startDate: weekStart, endDate: weekEnd,
-        allDay: true,
-        visibility: 'all',
-        createdAt: '', updatedAt: '',
-      }));
-
-      setEvents([...calEvents, ...meetingEvents, ...dailyEvents, ...weeklyEvents]);
+      setEvents([...calEvents, ...meetingEvents, ...dailyEvents]);
 
       const allLeave = leaveDocs.map(d => ({ id: d.id, ...d.data() } as LeaveRequest));
       setLeaveRequests(allLeave);
