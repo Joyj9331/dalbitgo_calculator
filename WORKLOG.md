@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-07-23 — Claude Code (4차)
+
+### Vercel 자동배포 지연 진단 (코드 변경 없음)
+
+- **증상**: `e92c619`(회의록 건) 푸시 후 1시간 넘게 `saemoyangfms.vercel.app`에 미반영. GitHub엔 커밋 확인됨.
+- **진단 방법**: `curl`로 프로덕션 번들 해시(`index-*.js`)와 `Last-Modified`를 로컬 빌드와 대조해 배포 여부 확인(캐시 아님을 무캐시 헤더로 재확인). 직전 커밋(`cc7f326`)은 정상 배포된 반면 `e92c619`만 Vercel 대시보드에 배포 항목 자체가 안 보임을 사용자가 확인.
+- **원인 미확정**: `gh` CLI가 이 머신에 없고 로그인도 대화형이라 웹훅 딜리버리 로그(GitHub Settings→Webhooks)는 못 봄. Vercel 프로젝트의 Git 연결 저장소가 `CLAUDE.md`에 적힌 구 저장소(`Joyj9331/dalbitgo_calculator`)를 아직 보고 있을 가능성을 1순위로 안내함.
+- **결과**: 대화 중 자연 반영 확인(번들 해시 갱신, `e92c619` 정상 배포됨). 사용자가 별도 조치했는지는 불명 — 재발 시 위 진단 순서(대시보드 Git 연결 확인 → 웹훅 Recent Deliveries) 그대로 사용.
+- **후속 발견**: `.claude/settings.local.json`에 Vercel MCP 도구(`list_teams/list_projects/list_deployments`) 권한이 이미 있음 — 다음엔 curl 대조보다 이 MCP로 먼저 배포 상태 조회할 것.
+
+---
+
 ## 2026-07-23 — Claude Code (3차)
 
 ### 회의록 UX 개선 2건 (배포 완료)
