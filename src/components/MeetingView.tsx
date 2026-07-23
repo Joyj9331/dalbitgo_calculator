@@ -165,18 +165,6 @@ function Section({ label, children, accent }: { label: string; children: React.R
     </div>
   );
 }
-function EmployeeSelect({ employees, value, onChange, placeholder = '담당자' }: {
-  employees: Employee[]; value: string; onChange: (v: string) => void; placeholder?: string;
-}) {
-  return (
-    <select value={value} onChange={e => onChange(e.target.value)}
-      className="w-full px-2 py-1.5 text-xs border border-stone-200 dark:border-stone-600 rounded bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-100 outline-none focus:border-stone-500">
-      <option value="">{placeholder}</option>
-      {employees.map(e => <option key={e.id} value={e.name}>{e.name} ({e.position})</option>)}
-    </select>
-  );
-}
-
 function EmployeeSearchInput({ employees, value, onChange, placeholder = '담당자 검색...' }: {
   employees: Employee[]; value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
@@ -230,6 +218,7 @@ function SortableAgendaBlock({ idx, data, employees, onChange, onRemove }: {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: data.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
   const [newCheck, setNewCheck] = useState('');
+  const { confirm } = useConfirm();
 
   const updateCheck = (ci: number, field: keyof CheckItem, val: string | boolean) => {
     const cl = data.checklist.map((c, i) => i === ci ? { ...c, [field]: val } : c);
@@ -242,10 +231,17 @@ function SortableAgendaBlock({ idx, data, employees, onChange, onRemove }: {
     onChange({ ...data, checklist: cl, progress: 0 });
     setNewCheck('');
   };
-  const removeCheck = (ci: number) => {
+  const removeCheck = async (ci: number) => {
+    const ok = await confirm({ title: '항목 삭제', message: '이 체크리스트 항목을 삭제할까요?', confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
     const cl = data.checklist.filter((_, i) => i !== ci);
     const done = cl.filter(c => c.done).length;
     onChange({ ...data, checklist: cl, progress: cl.length ? Math.round(done / cl.length * 100) : 0 });
+  };
+  const handleRemoveAgenda = async () => {
+    const ok = await confirm({ title: '안건 삭제', message: '이 안건을 삭제할까요? 안건에 포함된 체크리스트도 함께 삭제됩니다.', confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
+    onRemove();
   };
 
   return (
@@ -255,7 +251,7 @@ function SortableAgendaBlock({ idx, data, employees, onChange, onRemove }: {
           <button {...attributes} {...listeners} className="text-stone-300 hover:text-stone-500 cursor-grab active:cursor-grabbing touch-none"><GripVertical size={16} /></button>
           <span className="text-[11px] font-bold text-stone-400 uppercase tracking-widest">안건 {idx + 1}</span>
         </div>
-        <button onClick={onRemove} className="text-stone-400 hover:text-red-500 transition-colors"><X size={16} /></button>
+        <button onClick={handleRemoveAgenda} className="text-stone-400 hover:text-red-500 transition-colors"><X size={16} /></button>
       </div>
       <div className="mb-3">
         <label className="block text-[11px] font-semibold text-stone-500 dark:text-stone-400 mb-1">안건 제목 *</label>
@@ -293,7 +289,7 @@ function SortableAgendaBlock({ idx, data, employees, onChange, onRemove }: {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
         <div>
           <label className="block text-[11px] font-semibold text-stone-500 dark:text-stone-400 mb-1">담당자</label>
-          <EmployeeSelect employees={employees} value={data.assignee || ''} onChange={v => onChange({ ...data, assignee: v || undefined })} />
+          <EmployeeSearchInput employees={employees} value={data.assignee || ''} onChange={v => onChange({ ...data, assignee: v || undefined })} />
         </div>
         <div>
           <label className="block text-[11px] font-semibold text-stone-500 dark:text-stone-400 mb-1">참조</label>
@@ -357,9 +353,13 @@ function TemplateManagerModal({ templates, onClose, onSave }: {
   const updateAgendaTitle = (tIdx: number, aIdx: number, title: string) => setLocal(prev => prev.map((t, i) => i !== tIdx ? t : {
     ...t, agendas: t.agendas.map((a, ai) => ai !== aIdx ? a : { ...a, title })
   }));
-  const removeAgenda = (tIdx: number, aIdx: number) => setLocal(prev => prev.map((t, i) => i !== tIdx ? t : {
-    ...t, agendas: t.agendas.filter((_, ai) => ai !== aIdx)
-  }));
+  const removeAgenda = async (tIdx: number, aIdx: number) => {
+    const ok = await confirm({ title: '안건 삭제', message: '이 안건을 템플릿에서 삭제할까요?', confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
+    setLocal(prev => prev.map((t, i) => i !== tIdx ? t : {
+      ...t, agendas: t.agendas.filter((_, ai) => ai !== aIdx)
+    }));
+  };
 
   const handleSave = async () => {
     const removedIds = templates.map(t => t.id).filter(id => !local.some(t => t.id === id));
@@ -475,6 +475,11 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
     if (v && !attendees.includes(v)) setAttendees(prev => [...prev, v]);
     setAttendeeInput('');
   };
+  const removeAttendee = async (name: string) => {
+    const ok = await confirm({ title: '참석자 삭제', message: `"${name}"님을 참석자에서 삭제할까요?`, confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
+    setAttendees(prev => prev.filter(x => x !== name));
+  };
 
   const carryAgenda = (i: number) => {
     if (!prevMeeting?.agendas) return;
@@ -540,6 +545,11 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
     setDecisions(prev => [...prev, { id: genId(), text: newDecText.trim(), importance: newDecImp }]);
     setNewDecText('');
   };
+  const removeDecision = async (id: string) => {
+    const ok = await confirm({ title: '결정사항 삭제', message: '이 결정사항을 삭제할까요?', confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
+    setDecisions(prev => prev.filter(d => d.id !== id));
+  };
 
   const addActionItem = () => {
     if (!newActText.trim()) return;
@@ -550,6 +560,11 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
       done: false,
     }]);
     setNewActText(''); setNewActAssignee(''); setNewActDeadline('');
+  };
+  const removeActionItem = async (id: string) => {
+    const ok = await confirm({ title: '실행항목 삭제', message: '이 실행항목을 삭제할까요?', confirmLabel: '삭제', variant: 'danger' });
+    if (!ok) return;
+    setActionItems(prev => prev.filter(a => a.id !== id));
   };
 
   const callGemini = async () => {
@@ -789,7 +804,7 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
                 {attendees.map(a => (
                   <span key={a} className="flex items-center gap-1 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-full px-2 py-0.5 text-xs">
                     {a}
-                    <button onClick={() => setAttendees(prev => prev.filter(x => x !== a))} className="text-stone-400 hover:text-red-500 ml-0.5"><X size={11} /></button>
+                    <button onClick={() => removeAttendee(a)} className="text-stone-400 hover:text-red-500 ml-0.5"><X size={11} /></button>
                   </span>
                 ))}
               </div>
@@ -831,7 +846,7 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
                 <div key={d.id} className="flex items-start gap-2 p-2.5 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-lg">
                   <ImportanceBadge importance={d.importance} />
                   <span className="flex-1 text-sm text-stone-800 dark:text-stone-200">{d.text}</span>
-                  <button onClick={() => setDecisions(prev => prev.filter((_, xi) => xi !== i))} className="text-stone-300 hover:text-red-400 shrink-0 mt-0.5"><X size={14} /></button>
+                  <button onClick={() => removeDecision(d.id)} className="text-stone-300 hover:text-red-400 shrink-0 mt-0.5"><X size={14} /></button>
                 </div>
               ))}
             </div>
@@ -863,7 +878,7 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
                       autoFocus
                       className="w-full px-2 py-1.5 text-xs border border-blue-300 dark:border-blue-600 rounded bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 outline-none focus:border-blue-500" />
                     <div className="flex gap-2">
-                      <EmployeeSelect employees={employees} value={editActAssignee} onChange={setEditActAssignee} />
+                      <EmployeeSearchInput employees={employees} value={editActAssignee} onChange={setEditActAssignee} />
                       <input type="date" value={editActDeadline} onChange={e => setEditActDeadline(e.target.value)}
                         className="px-2 py-1.5 text-xs border border-stone-200 dark:border-stone-600 rounded bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 outline-none" />
                       <button onClick={() => saveEditAction(a.id)} className="px-2.5 py-1.5 text-xs bg-blue-600 text-white rounded-lg font-semibold hover:opacity-80 shrink-0"><Check size={12} /></button>
@@ -879,7 +894,7 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
                     {a.assignee && <span className="text-[10px] text-stone-500 bg-stone-100 dark:bg-stone-700 px-1.5 py-0.5 rounded-full shrink-0">{a.assignee}</span>}
                     {a.deadline && <span className={`text-[10px] font-semibold shrink-0 ${isOverdue(a.deadline) ? 'text-red-500' : 'text-blue-600 dark:text-blue-400'}`}>{a.deadline}</span>}
                     <button onClick={() => startEditAction(a)} className="text-stone-300 hover:text-blue-500 shrink-0"><Edit2 size={12} /></button>
-                    <button onClick={() => setActionItems(prev => prev.filter((_, xi) => xi !== i))} className="text-stone-300 hover:text-red-400 shrink-0"><X size={13} /></button>
+                    <button onClick={() => removeActionItem(a.id)} className="text-stone-300 hover:text-red-400 shrink-0"><X size={13} /></button>
                   </div>
                 )
               ))}
@@ -889,7 +904,7 @@ function MeetingForm({ initial, prevMeeting, employees, templates, onSave, onCan
                 onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addActionItem())}
                 placeholder="실행항목 입력 후 Enter"
                 className="px-2 py-1.5 text-xs border border-dashed border-stone-300 dark:border-stone-600 rounded-lg bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 outline-none focus:border-stone-400" />
-              <EmployeeSelect employees={employees} value={newActAssignee} onChange={setNewActAssignee} placeholder="담당자" />
+              <EmployeeSearchInput key={actionItems.length} employees={employees} value={newActAssignee} onChange={setNewActAssignee} placeholder="담당자" />
               <input type="date" value={newActDeadline} onChange={e => setNewActDeadline(e.target.value)}
                 className="px-2 py-1.5 text-xs border border-stone-200 dark:border-stone-600 rounded-lg bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 outline-none" />
               <button onClick={addActionItem} className="px-2.5 py-1.5 text-xs bg-stone-800 dark:bg-stone-200 text-white dark:text-stone-900 rounded-lg font-semibold hover:opacity-80 whitespace-nowrap">추가</button>

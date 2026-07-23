@@ -5,14 +5,25 @@
 
 ---
 
+## 2026-07-23 — Claude Code (3차)
+
+### 회의록 UX 개선 2건 (배포 완료)
+
+- **담당자 검색+직접입력**: 안건/실행항목 담당자 입력을 plain `<select>`(`EmployeeSelect`)에서 검색+직접입력 콤보박스로 교체. 같은 파일에 이미 완성돼 있었지만 어디서도 안 쓰이던 죽은 컴포넌트 `EmployeeSearchInput`을 연결(새로 안 만듦). 상시 마운트되는 "새 실행항목" 담당자 칸은 추가 후 내부 state가 안 비워지는 문제가 있어 `key={actionItems.length}`로 항목 추가 시 리마운트되게 처리. 죽은 코드였던 `EmployeeSelect` 함수 삭제.
+- **삭제 전 확인모달**: 회의록 전체·템플릿 삭제 2곳만 있던 `useConfirm()` 확인모달을, 체크리스트 항목·안건·참석자·결정사항·실행항목·템플릿 내 안건까지 총 6곳 추가 적용(사용자 요청 "모든 항목"). `SortableAgendaBlock`에 `useConfirm` 신규 연결.
+- `MeetingView.tsx` 단일 파일만 변경. 빌드 ✓. 브라우저 실동작은 Firebase 로그인 벽 때문에 이 세션에서 직접 확인 못 함 — 사용자 확인 요망.
+
+---
+
 ## 2026-07-23 — Claude Code (2차)
 
-### 공지사항 작성 권한을 전 직원으로 확대 (사용자 지시, ⚠️ 미배포)
+### 공지사항 작성 권한을 전 직원으로 확대 (코드 배포 완료, ⚠️ rules 게시는 사용자 확인 필요)
 
 - **배경**: 사용자가 소유권 전체 인수 후 지시 — 기존엔 공지 작성(`NoticeBoard.tsx`)이 관리자 전용.
-- **수정**: `firestore.rules`의 `notices` 규칙에서 `create`를 `isAdmin()`→`isApprovedUser()`로 분리(`delete`는 관리자 유지). `NoticeBoard.tsx`의 "공지 작성" 버튼·빈 상태 안내 문구에서 `isAdmin &&` 조건 제거.
-- **의도적으로 안 건드림**: 수정/삭제/고정/보관 등 "관리자 액션" 블록은 그대로 관리자 전용 — 요청 범위가 "작성"에 한정돼 있어서. 필요 시 작성자 본인 수정 허용도 추가 가능.
-- **⚠️ 미완**: 이 샌드박스에 npm 미탑재라 `npm run build` 미실행(변경은 조건문 삭제 1곳 + rules 권한 분리뿐이라 리스크 낮음, 그래도 배포 전 사용자 환경에서 빌드 확인 필요). `firestore.rules`는 기존 관례상 **Firebase 콘솔에서 수동 게시** 필요(CLI 403 반복 이력).
+- **수정**: `firestore.rules`의 `notices` 규칙에서 `create`를 `isAdmin()`→`isApprovedUser()`로 분리(`delete`는 관리자 유지). `NoticeBoard.tsx`의 "공지 작성" 버튼·빈 상태 안내 문구에서 `isAdmin &&` 조건 제거. 수정/삭제/고정/보관 등 "관리자 액션"은 의도적으로 그대로 관리자 전용 유지(요청 범위가 "작성"에 한정).
+- **환경**: 이 PC에 Node.js/npm이 아예 없었음 → winget으로 Node.js LTS(v24.18.0) 설치, `npm install` 완료. 이후 세션에선 새 터미널 열면 정상 인식(설치 당시 열려있던 터미널만 PATH 미반영).
+- **빌드·배포**: `npm run build` 성공 확인 후 커밋(`cc7f326`) → `git push origin main` 완료, Vercel 자동 배포됨.
+- **⚠️ 미완(사용자 확인 필요)**: `firestore.rules`는 git push로 반영 안 됨 — **Firebase 콘솔에서 수동 게시 필요**(default DB, CLI는 로그인 자체가 대화형이라 이 환경에서 불가). 게시 전까지 실제 저장은 여전히 관리자만 가능(권한 오류 재현 확인함).
 
 ---
 
