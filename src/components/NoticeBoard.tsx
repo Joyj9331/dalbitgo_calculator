@@ -210,7 +210,7 @@ export function NoticeBoard({ currentUser }: Props) {
           <h1 className="text-xl font-black text-stone-900 dark:text-stone-100">공지사항</h1>
           <p className="text-sm text-stone-400 mt-0.5">전체 {activeCount}건</p>
         </div>
-        {isAdmin && viewTab === 'active' && (
+        {viewTab === 'active' && (
           <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-sm font-bold hover:opacity-80">
             <Plus size={15} /> 공지 작성
           </button>
@@ -265,7 +265,7 @@ export function NoticeBoard({ currentUser }: Props) {
           <p className="text-sm font-semibold">
             {viewTab === 'archive' ? '보관된 공지가 없습니다' : '등록된 공지사항이 없습니다'}
           </p>
-          {isAdmin && viewTab === 'active' && <p className="text-xs mt-1">위 버튼으로 첫 공지를 작성해보세요</p>}
+          {viewTab === 'active' && <p className="text-xs mt-1">위 버튼으로 첫 공지를 작성해보세요</p>}
         </div>
       ) : (
         <div className="space-y-2">
