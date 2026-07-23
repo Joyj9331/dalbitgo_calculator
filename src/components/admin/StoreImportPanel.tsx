@@ -80,13 +80,19 @@ export function StoreImportPanel() {
   const [unmappedStores, setUnmappedStores] = useState<Store[]>([]);
   const [schedules, setSchedules] = useState<FranchiseSchedule[]>([]);
   const [skippedMerged, setSkippedMerged] = useState(0);
+  const [skippedNoCode, setSkippedNoCode] = useState(0);
   const [fcdaumLoading, setFcdaumLoading] = useState(false);
 
   const handleFcdaumSync = async () => {
     setFcdaumLoading(true);
     try {
       const fcdaumStores = await fetchAllStores();
-      const parsed = fcdaumStores.map(mapFcdaumStore);
+      const allParsed = fcdaumStores.map(mapFcdaumStore);
+      // 매장코드(storeId)가 아직 발급 안 된 신규매장은 문서 ID로 쓸 수 없어 여기서 제외
+      // (저장 시 doc(salesDb,'stores', undefined)가 SDK 내부에서 크래시나던 원인 — 배치 전체를 막았음)
+      const noCode = allParsed.filter(p => !p.id);
+      setSkippedNoCode(noCode.length);
+      const parsed = allParsed.filter(p => !!p.id);
 
       const existingSnap = await getDocs(collection(salesDb, 'stores'));
       const existingMap = new Map<string, Store>();
@@ -109,7 +115,7 @@ export function StoreImportPanel() {
         return { state: changed ? 'changed' as const : 'unchanged' as const, parsed: p, existing };
       });
       setPreview(rows);
-      toast.success(`FC다움에서 ${parsed.length}개 매장 불러옴`);
+      toast.success(`FC다움에서 ${parsed.length}개 매장 불러옴${noCode.length > 0 ? ` (매장코드 미발급 ${noCode.length}개 제외)` : ''}`);
     } catch (err) {
       console.error(err);
       toast.error(err instanceof Error ? err.message : 'FC다움 API 오류');
@@ -155,11 +161,15 @@ export function StoreImportPanel() {
     const toWrite = preview.filter(r => r.state !== 'unchanged');
     if (toWrite.length === 0) { toast.error('변경된 데이터가 없습니다.'); return; }
 
+    // 방어: 매장코드(id) 없는 행이 섞여 있으면 doc()가 undefined로 즉시 크래시해 배치 전체가 막힘
+    const writable = toWrite.filter(r => !!r.parsed.id);
+    if (writable.length === 0) { toast.error('저장 가능한 매장이 없습니다 (매장코드 누락).'); return; }
+
     setImporting(true);
     try {
       const now = new Date().toISOString();
       const batch = writeBatch(salesDb);
-      toWrite.forEach(r => {
+      writable.forEach(r => {
         const store: Store = {
           ...r.parsed,
           scheduleId: r.existing?.scheduleId,
@@ -170,10 +180,10 @@ export function StoreImportPanel() {
         batch.set(doc(salesDb, 'stores', r.parsed.id), clean, { merge: true });
       });
       await batch.commit();
-      toast.success(`${toWrite.length}개 매장 저장 완료`);
+      toast.success(`${writable.length}개 매장 저장 완료`);
 
       // 매핑 팝업: scheduleId 없는 신규 매장
-      const newStores = toWrite
+      const newStores = writable
         .filter(r => r.state === 'new')
         .map(r => ({ ...r.parsed, importedAt: now } as Store));
       if (newStores.length > 0) {
@@ -237,6 +247,12 @@ export function StoreImportPanel() {
             <div className="bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-sm px-3 py-2 flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
               <Info size={13} className="shrink-0" />
               합치기로 삭제된 매장 <span className="font-black text-stone-700 dark:text-stone-200">{skippedMerged}개</span>가 엑셀에 있지만 임포트에서 자동 제외되었습니다.
+            </div>
+          )}
+          {skippedNoCode > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-sm px-3 py-2 flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400">
+              <AlertCircle size={13} className="shrink-0" />
+              FC다움에서 매장코드가 아직 발급되지 않은 신규 매장 <span className="font-black">{skippedNoCode}개</span>는 저장할 수 없어 제외되었습니다. 매장코드 발급 후 다시 불러오거나, 엑셀 업로드(관리번호 기준)로 등록해주세요.
             </div>
           )}
           <div className="flex items-center gap-3 flex-wrap">
