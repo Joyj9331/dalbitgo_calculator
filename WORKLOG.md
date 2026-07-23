@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-07-23 — Claude Code
+
+### FC다움 매장 저장 "저장 중 오류가 발생했습니다" 크래시 수정 (배포 완료)
+
+- **원인 확정**(콘솔 에러로 확인): `mapFcdaumStore`가 `id: s.storeId`를 문서ID로 쓰는데, FC다움 코드 미발급 신규매장은 `storeId`가 `undefined` → `doc(salesDb,'stores',undefined)`가 SDK 내부에서 `TypeError: Cannot read properties of undefined (reading 'indexOf')`로 즉시 크래시. `batch.commit()` 전에 터져서 **같은 배치의 다른 정상 매장 변경분까지 전부 저장 실패**하던 것.
+- **수정**(`StoreImportPanel.tsx`, `bf2f2fa`): 매장코드 없는 행을 불러오기 단계에서 걸러내고 배너로 안내("매장코드 미발급 N개 제외"), `handleImport`에도 같은 가드 추가(방어).
+- **근본 미해결**: 코드 없는 신규매장 자체는 여전히 이 경로로 못 들어옴(기존 진단 [[project_fcdaum_store_import_bug]] ②와 동일 건). storeNo 기반으로 통일하려면 기존 stores 문서 ~600개 재키잉 필요 — 리스크 있어 사용자 결정 대기 중, 지금은 엑셀 업로드(관리번호 기준)로 우회 가능.
+
+---
+
 ## 2026-07-20 — Claude Code
 
 ### 전사 캘린더 "개인 일정 등록해도 안 보임" 버그 — 진짜 원인은 Promise.all 전체실패 (배포 완료)
